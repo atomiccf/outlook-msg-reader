@@ -2,7 +2,7 @@ import { container } from './di/container';
 import { CFBFConstants } from './constants/cfbf';
 import type * as fs from 'fs';
 import { Readable } from 'stream';
-import { ReadStream } from "node:fs";
+
 
 export class HeaderReader {
     private readonly constants: CFBFConstants;
@@ -14,15 +14,15 @@ export class HeaderReader {
     /**
      * Reads the header from a file (only the first 512 bytes)
      */
-    async readHeader(input: string): Promise<Buffer> {
-        const stream:ReadStream = this.#convertInputToStream(input);
-        const headerBytes = await this.#readHeaderBytes(stream, this.constants.HEADER_SIZE);
+    async readHeaderWithStream(input: string): Promise<{ header: Buffer; stream: Readable }> {
+        const stream = this.#convertInputToStream(input);
+        const header = await this.#readHeaderBytes(stream, this.constants.HEADER_SIZE);
 
-        if (!this.#validateSignatures(headerBytes)) {
+        if (!this.#validateSignatures(header)) {
             throw new Error('Invalid file signature');
         }
 
-        return headerBytes;
+        return { header, stream };
     }
 
     /**
@@ -74,6 +74,7 @@ export class HeaderReader {
         });
     }
 
+
     /**
      * Converts a file path into a ReadStream (reads only the first 512 bytes)
      */
@@ -84,11 +85,13 @@ export class HeaderReader {
             throw new Error('FS module not available');
         }
 
-        return fsModule.createReadStream(input, { start: 0, end: 511 });
+        return fsModule.createReadStream(input);
     }
 
     #validateSignatures(headerBytes: Buffer): boolean {
-        return headerBytes.equals(new Uint8Array(this.constants.CFBF_SIGNATURE));
+        const signature = headerBytes.subarray(0, 8);
+        const expected = Buffer.from(this.constants.CFBF_SIGNATURE);
+        return signature.equals(expected);
     }
 
 }

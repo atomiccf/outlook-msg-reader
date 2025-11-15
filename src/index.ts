@@ -1,46 +1,45 @@
 import { setupContainer } from './di/setup';
 import { container } from './di/container';
 import type { HeaderReader } from './headerReader';
-
+import type { FATReader } from './fatReader';
+import type { HeaderInfo, Msg, MsgBody, MsgAttachment } from './types';
 setupContainer();
-
-export interface MsgAttachment {
-    name: string;
-    mime: string;
-    content: Buffer;
-}
-
-export interface MsgBody {
-    text?: string;
-    html?: string;
-    rtf?: string;
-}
-
-export interface Msg {
-    subject: string;
-    from: { name: string; email: string };
-    to: Array<{ name: string; email: string }>;
-    cc?: Array<{ name: string; email: string }>;
-    body: MsgBody;
-    attachments: MsgAttachment[];
-}
 
 export async function parseMsg(filePath: string): Promise<Msg> {
     // Resolve HeaderReader factory from container (returns function that creates HeaderReader)
     const headerReaderFactory = container.resolve<() => HeaderReader>('headerReaderFactory');
+    const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
 
     if (!headerReaderFactory || typeof headerReaderFactory !== 'function') {
         throw new Error('HeaderReader factory not found or invalid');
     }
 
-    // Create HeaderReader instance using the factory
-    const headerReader = headerReaderFactory();
+   const headerReader = headerReaderFactory();
 
-    // Read header from file
-    const header = await headerReader.readHeader(filePath);
+    // Read a header from the file
+    const { header, stream } = await headerReader.readHeaderWithStream(filePath);
+
+    const headerInfo: HeaderInfo = {
+        sectorSize: 1 << header.readUInt16LE(30),
+        miniSectorSize: 1 << header.readUInt16LE(32),
+        numFATSectors: header.readUInt32LE(44),
+        dirSectorLocation: header.readUInt32LE(48),
+        numDirectorySectors: header.readUInt32LE(40),
+        miniStreamCutoffSize: header.readUInt32LE(56),
+        fatSectorLocations: Array.from({ length: 109 }, (_, i) => header.readUInt32LE(76 + i * 4)),
+        signature: header.subarray(0, 8),
+        rawHeader: header
+    };
+
+
+    if (!fatReaderFactory || typeof fatReaderFactory !== 'function') {
+        throw new Error('FATReader factory not found or invalid');
+    }
+    const fatReader = fatReaderFactory();
+    const fatTable = await fatReader.buildTable(filePath, headerInfo);
 
     console.info('Header read:', header);
-
+    console.info('FAT table build:', fatTable);
     // Your parsing logic here
     return {
         subject: 'Test email',
