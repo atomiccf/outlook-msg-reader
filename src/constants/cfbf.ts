@@ -3,4 +3,5 @@ export class CFBFConstants {
     readonly HEADER_SIZE = 512;
     readonly DEFAULT_SECTOR_SIZE = 512;
     readonly DEFAULT_MINI_SECTOR_SIZE = 64;
+    readonly END_OF_CHAIN = -2;
 }

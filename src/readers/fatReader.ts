@@ -1,15 +1,15 @@
 import { Readable } from 'stream';
-import { HeaderInfo } from "./types";
-import { container } from './di/container';
+import { HeaderInfo } from "../types";
+import { container } from '../di/container';
 import type fs from "fs";
-import { parseUint32Array } from "./utils/utils";
+import { parseUint32Array } from "../utils/utils";
 
 export class FATReader {
     private fatTable: Record<number, number> = {};
 
     async buildTable(input: string | Readable, headerInfo: HeaderInfo) {
         for (const sectorIndex of headerInfo.fatSectorLocations) {
-            const sectorBytes = await this.#readSector(input, sectorIndex, headerInfo);
+            const sectorBytes = await this.readSector(input, sectorIndex, headerInfo);
             const entries = parseUint32Array(sectorBytes);
 
 
@@ -22,7 +22,7 @@ export class FATReader {
         return this.fatTable;
     }
 
-    async #readSector(input: string | Readable, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
+    async readSector(input: string | Readable, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
         const fsModule = container.resolve<typeof fs>('fs');
         const offset = (sectorIndex + 1) * headerInfo.sectorSize;
 

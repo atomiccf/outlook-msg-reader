@@ -46,5 +46,9 @@ export interface HeaderInfo {
 
     /** Full header buffer (512 bytes) */
     rawHeader: Buffer;
+    /** Index of the first sector of the MiniFAT */
+    miniFatStartSector: number;
+    /** Number of sectors in the MiniFAT */
+    miniFatSectorCount: number;
 }
 
