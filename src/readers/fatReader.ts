@@ -24,6 +24,9 @@ export class FATReader {
 
     async readSector(input: string | Readable, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
         const fsModule = container.resolve<typeof fs>('fs');
+        if (!Number.isInteger(sectorIndex) || sectorIndex < 0) {
+            throw new Error(`Invalid sector index: ${sectorIndex}`);
+        }
         const offset = (sectorIndex + 1) * headerInfo.sectorSize;
 
         let stream: Readable;
@@ -41,7 +44,39 @@ export class FATReader {
 
     getNextSector(sectorIndex: number): number | null {
         const next = this.fatTable[sectorIndex];
-        return next === 0xFFFFFFFE ? null : next; // ENDOFCHAIN
+        if (next === undefined) return null;
+        // Treat special markers as chain termination for our traversal
+        if (next >= 0xFFFFFFFC) return null; // DIFSECT, FATSECT, ENDOFCHAIN
+        return next;
+    }
+
+    /**
+     * Reads a whole sector chain starting at startSector (following FAT) and
+     * returns a concatenated buffer of all sectors in the chain.
+     * Requires buildTable() to be called beforehand.
+     */
+    async readChain(input: string | Readable, startSector: number, headerInfo: HeaderInfo): Promise<Buffer> {
+        if (!this.fatTable || Object.keys(this.fatTable).length === 0) {
+            throw new Error('FAT table is empty. Call buildTable() before readChain.');
+        }
+
+        const visited = new Set<number>();
+        const buffers: Buffer[] = [];
+
+        let sector: number | null = startSector;
+        while (sector !== null) {
+            if (visited.has(sector)) {
+                throw new Error('FAT sector chain loop detected');
+            }
+            visited.add(sector);
+
+            const bytes = await this.readSector(input, sector, headerInfo);
+            buffers.push(bytes);
+
+            sector = this.getNextSector(sector);
+        }
+
+        return Buffer.concat(buffers);
     }
 
     async #readFully(stream: Readable, size: number): Promise<Buffer> {

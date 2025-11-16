@@ -7,12 +7,13 @@ import { parseUint32Array } from "../utils/utils";
 
 export class MiniFATReader {
     private miniFAT: number[] = [];
-    constructor(constants:CFBFConstants, fatReader:FATReader) {
+    private readonly constants: CFBFConstants;
+    private readonly fatReader: FATReader;
+
+    constructor(constants: CFBFConstants, fatReader: FATReader) {
         this.constants = constants;
         this.fatReader = fatReader;
     }
-    private constants = container.resolve<any>('CFBFConstants');
-    private fatReader = container.resolve<FATReader>('fatReaderFactory');
 
 
     /**
@@ -22,7 +23,7 @@ export class MiniFATReader {
         let sector = headerInfo.miniFatStartSector;
         const visited = new Set<number>();
 
-        while (sector !== this.constants.END_OF_CHAIN) {
+        while (sector !== null) {
             if (visited.has(sector)) {
                 throw new Error('MiniFAT sector chain loop detected');
             }
@@ -43,7 +44,7 @@ export class MiniFATReader {
     getNextMiniSector(index: number): number | null {
         if (index < 0 || index >= this.miniFAT.length) return null;
         const next = this.miniFAT[index];
-        return next === this.constants.END_OF_CHAIN ? null : next;
+        return next === 0xFFFFFFFE ? null : next;
     }
 
     /**
@@ -56,6 +57,7 @@ export class MiniFATReader {
 
 export function MiniFATReaderFactory(): MiniFATReader {
     const constants = container.resolve<CFBFConstants>(CFBFConstants);
-    const fatReader = container.resolve<FATReader>('fatReaderFactory');
+    const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
+    const fatReader = fatReaderFactory();
     return new MiniFATReader(constants, fatReader);
 }

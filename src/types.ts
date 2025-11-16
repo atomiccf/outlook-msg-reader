@@ -52,3 +52,46 @@ export interface HeaderInfo {
     miniFatSectorCount: number;
 }
 
+/**
+ * Directory entry object type identifiers as per CFBF specification.
+ */
+export enum DirectoryEntryType {
+    Empty = 0x00,
+    Storage = 0x01,
+    Stream = 0x02,
+    Root = 0x05,
+}
+
+/**
+ * Raw directory entry parsed from a 128-byte record.
+ * Values are kept close to file format semantics.
+ */
+export interface DirectoryEntryRaw {
+    sid: number;
+    name: string;
+    type: DirectoryEntryType;
+    colorFlag: number;
+    leftSiblingSid: number;
+    rightSiblingSid: number;
+    childSid: number;
+    clsid: string | null;
+    stateBits: number;
+    creationTime?: bigint;
+    modifiedTime?: bigint;
+    startingSectorLocation: number;
+    streamSize: number;
+}
+
+/**
+ * Normalized node for convenient tree navigation.
+ */
+export interface DirectoryNode {
+    sid: number;
+    name: string;
+    type: DirectoryEntryType;
+    startingSectorLocation: number;
+    streamSize: number;
+    children: DirectoryNode[];
+    parentSid: number | null;
+}
+
