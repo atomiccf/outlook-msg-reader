@@ -4,7 +4,6 @@ import { CFBFConstants } from '../constants/cfbf';
 import { HeaderReaderFactory } from '../readers/headerReader';
 import { FATReaderFactory } from '../readers/fatReader';
 import { MiniFATReaderFactory } from '../readers/miniFATReader';
-import { MiniStreamReaderFactory } from '../readers/miniStreamReader';
 import * as fs from 'node:fs';
 import {DirectoryReaderFactory} from "../readers/directoryReader";
 
@@ -27,16 +26,6 @@ export function setupContainer(): void {
         "fatReaderFactory",
         () => FATReaderFactory,  // Return the factory function itself
         true // singleton - same factory function instance
-    );
-    container.factory(
-        "miniFATReaderFactory",
-        () => MiniFATReaderFactory,
-        true
-    );
-    container.factory(
-        "miniStreamReaderFactory",
-        () => MiniStreamReaderFactory,
-        true
     );
     container.factory(
         "directoryReaderFactory",
