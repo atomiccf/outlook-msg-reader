@@ -4,8 +4,10 @@ import { CFBFConstants } from '../constants/cfbf';
 import { HeaderReaderFactory } from '../readers/headerReader';
 import { FATReaderFactory } from '../readers/fatReader';
 import { MiniFATReaderFactory } from '../readers/miniFATReader';
+import { MiniStreamReaderFactory } from '../readers/miniStreamReader';
 import * as fs from 'node:fs';
 import {DirectoryReaderFactory} from "../readers/directoryReader";
+import { DecoderFactory } from '../encoding/decoder';
 
 /**
  * Configure all dependencies
@@ -32,6 +34,22 @@ export function setupContainer(): void {
         () => DirectoryReaderFactory,  // Return the factory function itself
         true // singleton - same factory function instance
     );
+    container.factory(
+        "miniFATReaderFactory",
+        () => MiniFATReaderFactory,  // Return the factory function itself
+        true // singleton - same factory function instance
+    );
+    container.factory(
+        "miniStreamReaderFactory",
+        () => MiniStreamReaderFactory,  // Return the factory function itself
+        true // singleton - same factory function instance
+    );
 
+    // Register decoder as singleton instance
+    container.factory(
+        "decoder",
+        () => DecoderFactory(),  // Call the factory to create Decoder instance
+        true // singleton - reuse the same decoder instance
+    );
 
 }

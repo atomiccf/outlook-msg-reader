@@ -11,6 +11,7 @@ export class DirectoryReader {
     private entries: DirectoryEntryRaw[] = [];
     private nodesBySid: Map<number, DirectoryNode> = new Map();
     private root: DirectoryNode | null = null;
+    private fatReader: FATReader | null = null;
     private miniFATReader: MiniFATReader | null = null;
     private miniStreamReader: MiniStreamReader | null = null;
 
@@ -23,16 +24,16 @@ export class DirectoryReader {
      */
     async readDirectorySectors(input: string | Readable, headerInfo: HeaderInfo): Promise<Buffer> {
         const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-        const fatReader = fatReaderFactory();
+        this.fatReader = fatReaderFactory();
         // Ensure FAT table is available for this instance
-        await fatReader.buildTable(input, headerInfo);
+        await this.fatReader.buildTable(input, headerInfo);
 
         // Validate starting sector
         const start = headerInfo.dirSectorLocation;
         if (!Number.isInteger(start) || start < 0 || start === 0xFFFFFFFE || start === 0xFFFFFFFF) {
             throw new Error(`Invalid directory start sector: ${start}`);
         }
-        return fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo);
+        return this.fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo);
     }
 
     /**
@@ -211,20 +212,23 @@ export class DirectoryReader {
      * Initialize MiniFAT and MiniStream from Root Entry stream
      */
     async initializeMiniStream(input: string | Readable, headerInfo: HeaderInfo): Promise<void> {
-        const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
         const miniFATFactory = container.resolve<() => MiniFATReader>('miniFATReaderFactory');
         const miniStreamFactory = container.resolve<() => MiniStreamReader>('miniStreamReaderFactory');
 
         this.miniFATReader = miniFATFactory();
         await this.miniFATReader.buildMiniFAT(input, headerInfo);
 
-        const fatReader = fatReaderFactory();
-        await fatReader.buildTable(input, headerInfo);
+        // Ensure FATReader is initialized (should already be from loadDirectory)
+        if (!this.fatReader) {
+            const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
+            this.fatReader = fatReaderFactory();
+            await this.fatReader.buildTable(input, headerInfo);
+        }
         if (!this.root) {
             throw new Error('Root directory not loaded');
         }
         // Root entry stream stores the mini-stream content
-        const rootStreamChain = await fatReader.readChain(input, this.root.startingSectorLocation, headerInfo);
+        const rootStreamChain = await this.fatReader.readChain(input, this.root.startingSectorLocation, headerInfo);
         const rootStreamBuffer = rootStreamChain.subarray(0, this.root.streamSize);
 
         this.miniStreamReader = miniStreamFactory();
@@ -235,8 +239,12 @@ export class DirectoryReader {
      * Read a stream by SID, choosing MiniStream or regular FAT by size
      */
     async readStreamBySid(input: string | Readable, headerInfo: HeaderInfo, sid: number): Promise<Buffer> {
-        const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-        const fatReader = fatReaderFactory();
+        // Ensure FATReader is initialized (should already be from loadDirectory)
+        if (!this.fatReader) {
+            const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
+            this.fatReader = fatReaderFactory();
+            await this.fatReader.buildTable(input, headerInfo);
+        }
         const node = this.nodesBySid.get(sid);
         if (!node) throw new Error(`Directory entry SID ${sid} not found`);
 
@@ -251,7 +259,7 @@ export class DirectoryReader {
             });
         }
 
-        const chain = await fatReader.readChain(input, node.startingSectorLocation, headerInfo);
+        const chain = await this.fatReader.readChain(input, node.startingSectorLocation, headerInfo);
         return chain.subarray(0, node.streamSize);
     }
 

@@ -229,7 +229,7 @@ export async function loadDirectory(filePath: string): Promise<{
     const fatReader = fatReaderFactory();
     console.info('[loadDirectory] building FAT table...');
     // Use file path for random access reads to avoid stream seek issues
-    await fatReader.buildTable(stream, headerInfo);
+    await fatReader.buildTable(filePath, headerInfo);
 
     const dirReader = directoryReaderFactory();
     console.info('[loadDirectory] loading directory sectors...');
