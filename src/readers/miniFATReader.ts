@@ -2,16 +2,13 @@ import { Readable } from 'stream';
 import { HeaderInfo } from "../types";
 import { container } from '../di/container';
 import { FATReader } from './fatReader';
-import { CFBFConstants } from "../constants/cfbf";
 import { parseUint32Array } from "../utils/utils";
 
 export class MiniFATReader {
     private miniFAT: number[] = [];
-    private readonly constants: CFBFConstants;
     private readonly fatReader: FATReader;
 
-    constructor(constants: CFBFConstants, fatReader: FATReader) {
-        this.constants = constants;
+    constructor( fatReader: FATReader) {      
         this.fatReader = fatReader;
     }
 
@@ -56,8 +53,6 @@ export class MiniFATReader {
 }
 
 export function MiniFATReaderFactory(): MiniFATReader {
-    const constants = container.resolve<CFBFConstants>(CFBFConstants);
-    const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-    const fatReader = fatReaderFactory();
-    return new MiniFATReader(constants, fatReader);
+    const fatReader = container.get<FATReader>('fatReader');   
+    return new MiniFATReader(fatReader);
 }

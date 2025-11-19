@@ -7,7 +7,6 @@ import { MiniStreamReader } from "./miniStreamReader";
 import { DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo } from "../types";
 
 export class DirectoryReader {
-    private readonly constants: CFBFConstants;
     private entries: DirectoryEntryRaw[] = [];
     private nodesBySid: Map<number, DirectoryNode> = new Map();
     private root: DirectoryNode | null = null;
@@ -16,12 +15,10 @@ export class DirectoryReader {
     private miniStreamReader: MiniStreamReader | null = null;
 
     constructor(
-        constants: CFBFConstants, 
         fatReader:FATReader, 
         miniFATReader:MiniFATReader, 
         miniStreamReader:MiniStreamReader
     ) {
-        this.constants = constants;
         this.fatReader = fatReader;
         this.miniFATReader = miniFATReader;
         this.miniStreamReader = miniStreamReader;
@@ -267,10 +264,9 @@ export class DirectoryReader {
 }
 
 export function DirectoryReaderFactory(): DirectoryReader {
-    const constants = container.get<CFBFConstants>("CFBFConstants");
     const fatReader = container.get<FATReader>('fatReader');
     const miniFATFactory = container.get<MiniFATReader>('miniFATReader');
     const miniStreamFactory = container.get<MiniStreamReader>('miniStreamReader');
-    return new DirectoryReader(constants, fatReader, miniFATFactory, miniStreamFactory);
+    return new DirectoryReader(fatReader, miniFATFactory, miniStreamFactory);
 }
 

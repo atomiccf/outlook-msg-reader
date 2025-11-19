@@ -55,7 +55,6 @@ export class MiniStreamReader {
 
 
 export function MiniStreamReaderFactory(): MiniStreamReader {
-    const miniFATFactory = container.resolve<() => MiniFATReader>('miniFATReaderFactory');
-    const miniFAT = miniFATFactory();
+    const miniFAT = container.get<MiniFATReader>('miniFATReader');
     return new MiniStreamReader(miniFAT);
 }

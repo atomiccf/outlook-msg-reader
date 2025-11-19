@@ -6,9 +6,11 @@ import { Readable } from 'stream';
 
 export class HeaderReader {
     private readonly constants: CFBFConstants;
+    private readonly fs:fs
 
-    constructor(constants: CFBFConstants) {
+    constructor(constants: CFBFConstants, fs) {
         this.constants = constants;
+        this.fs = fs;
     }
 
     /**
@@ -79,13 +81,13 @@ export class HeaderReader {
      * Converts a file path into a ReadStream (reads only the first 512 bytes)
      */
     #convertInputToStream(input: string): fs.ReadStream {
-        const fsModule = container.resolve<typeof fs>('fs');
+       
 
-        if (!fsModule?.createReadStream) {
+        if (!this.fs?.createReadStream) {
             throw new Error('FS module not available');
         }
 
-        return fsModule.createReadStream(input);
+        return this.fs.createReadStream(input);
     }
 
     #validateSignatures(headerBytes: Buffer): boolean {
@@ -100,6 +102,7 @@ export class HeaderReader {
  * Factory function to create HeaderReader with dependencies from the DI container
  */
 export function HeaderReaderFactory(): HeaderReader {
-    const constants = container.resolve<CFBFConstants>(CFBFConstants);
-    return new HeaderReader(constants);
+    const constants = container.get<CFBFConstants>("cfbfConstants");
+    const fs = container.get('fs');
+    return new HeaderReader(constants, fs);
 }

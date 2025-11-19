@@ -6,6 +6,11 @@ import { parseUint32Array } from "../utils/utils";
 
 export class FATReader {
     private fatTable: Record<number, number> = {};
+    private readonly fs: typeof fs
+
+    constructor(fs){
+        this.fs = fs;
+    }
 
     async buildTable(input: string | Readable, headerInfo: HeaderInfo) {
         for (const sectorIndex of headerInfo.fatSectorLocations) {
@@ -23,7 +28,7 @@ export class FATReader {
     }
 
     async readSector(input: string | Readable, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
-        const fsModule = container.resolve<typeof fs>('fs');
+
         if (!Number.isInteger(sectorIndex) || sectorIndex < 0) {
             throw new Error(`Invalid sector index: ${sectorIndex}`);
         }
@@ -31,7 +36,7 @@ export class FATReader {
 
         let stream: Readable;
         if (typeof input === 'string') {
-            stream = fsModule.createReadStream(input, {
+            stream = this.fs.createReadStream(input, {
                 start: offset,
                 end: offset + headerInfo.sectorSize - 1
             });
@@ -101,5 +106,6 @@ export class FATReader {
 }
 
 export function FATReaderFactory(): FATReader {
-    return new FATReader();
+    const fs = container.get('fs');
+    return new FATReader(fs);
 }
