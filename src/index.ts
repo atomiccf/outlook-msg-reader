@@ -204,12 +204,12 @@ export async function loadDirectory(filePath: string): Promise<{
     readStreamBySid: (sid: number) => Promise<Buffer>
 }> {
     console.info('[loadDirectory] reading header:', filePath);
-    const headerReaderFactory = container.resolve<() => HeaderReader>('headerReaderFactory');
-    const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-    const directoryReaderFactory = container.resolve<() => DirectoryReader>('directoryReaderFactory');
-    const headerReader = headerReaderFactory();
+    const headerReader = container.get<HeaderReader>('headerReader');
+    const fatReader = container.get<FATReader>('fatReader');
+    const directoryReader = container.get<DirectoryReader>('directoryReader');
 
-    const { header, stream } = await headerReader.readHeaderWithStream(filePath);
+
+    const { header } = await headerReader.readHeaderWithStream(filePath);
 
     const headerInfo: HeaderInfo = {
         sectorSize: 1 << header.readUInt16LE(30),
@@ -225,22 +225,22 @@ export async function loadDirectory(filePath: string): Promise<{
         rawHeader: header
     };
 
-    const fatReader = fatReaderFactory();
+
     console.info('[loadDirectory] building FAT table...');
     // Use file path for random access reads to avoid stream seek issues
     await fatReader.buildTable(filePath, headerInfo);
 
-    const dirReader = directoryReaderFactory();
+
     console.info('[loadDirectory] loading directory sectors...');
-    await dirReader.loadDirectory(filePath, headerInfo);
+    await directoryReader.loadDirectory(filePath, headerInfo);
     console.info('[loadDirectory] directory tree ready.');
 
     return {
         headerInfo,
-        tree: dirReader.getTree(),
-        getDirectoryTree: () => dirReader.getTree(),
-        readStreamByPath: async (path: string[]) => dirReader.readStreamByPath(filePath, headerInfo, path),
-        readStreamBySid: async (sid: number) => dirReader.readStreamBySid(filePath, headerInfo, sid)
+        tree: directoryReader.getTree(),
+        getDirectoryTree: () => directoryReader.getTree(),
+        readStreamByPath: async (path: string[]) => directoryReader.readStreamByPath(filePath, headerInfo, path),
+        readStreamBySid: async (sid: number) => directoryReader.readStreamBySid(filePath, headerInfo, sid)
     };
 }
 

@@ -1,15 +1,15 @@
 import { Readable } from 'stream';
 import { HeaderInfo } from "../types";
 import { container } from '../di/container';
-import type fs from "fs";
+import type * as fs from "fs";
 import { parseUint32Array } from "../utils/utils";
 
 export class FATReader {
     private fatTable: Record<number, number> = {};
     private readonly fs: typeof fs
 
-    constructor(fs){
-        this.fs = fs;
+    constructor(fsModule: typeof fs){
+        this.fs = fsModule;
     }
 
     async buildTable(input: string | Readable, headerInfo: HeaderInfo) {
@@ -106,6 +106,6 @@ export class FATReader {
 }
 
 export function FATReaderFactory(): FATReader {
-    const fs = container.get('fs');
-    return new FATReader(fs);
+    const fsModule = container.get<typeof fs>('fs');
+    return new FATReader(fsModule);
 }
