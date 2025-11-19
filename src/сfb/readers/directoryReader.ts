@@ -1,9 +1,9 @@
-import {container} from "../di/container";
+import {container} from "../../di/container";
 import {Readable} from 'stream';
 import {FATReader} from "./fatReader";
 import {MiniFATReader} from "./miniFATReader";
 import {MiniStreamReader} from "./miniStreamReader";
-import {DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo} from "../types";
+import {DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo} from "../../types";
 
 export class DirectoryReader {
     private entries: DirectoryEntryRaw[] = [];

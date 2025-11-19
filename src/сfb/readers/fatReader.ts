@@ -1,8 +1,8 @@
 import { Readable } from 'stream';
-import { HeaderInfo } from "../types";
-import { container } from '../di/container';
+import { HeaderInfo } from "../../types";
+import { container } from '../../di/container';
 import type * as fs from "fs";
-import { parseUint32Array } from "../utils/utils";
+import { parseUint32Array } from "../../utils/utils";
 
 export class FATReader {
     private fatTable: Record<number, number> = {};

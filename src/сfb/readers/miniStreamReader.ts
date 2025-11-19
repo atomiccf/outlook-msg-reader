@@ -1,6 +1,6 @@
 import { Readable } from 'stream';
-import { HeaderInfo } from "../types";
-import { container } from '../di/container';
+import { HeaderInfo } from "../../types";
+import { container } from '../../di/container';
 import { MiniFATReader } from './miniFATReader';
 
 

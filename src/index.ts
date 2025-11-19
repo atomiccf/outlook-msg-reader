@@ -1,9 +1,9 @@
 import { container}  from './di/container';
-import type { HeaderReader } from './readers/headerReader';
-import type { FATReader } from './readers/fatReader';
+import type { HeaderReader } from './сfb/readers/headerReader';
+import type { FATReader } from './сfb/readers/fatReader';
 import { Decoder, type SupportedCodePage } from './encoding/decoder';
 import type { HeaderInfo, Msg, MsgBody, MsgAttachment, DirectoryNode } from './types';
-import { DirectoryReader } from './readers/directoryReader';
+import { DirectoryReader } from './сfb/readers/directoryReader';
 
 
 export async function parseMsg(filePath: string): Promise<Msg> {

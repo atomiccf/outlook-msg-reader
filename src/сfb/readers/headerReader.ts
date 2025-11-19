@@ -1,5 +1,5 @@
-import { container } from '../di/container';
-import { CFBFConstants } from '../constants/cfbf';
+import { container } from '../../di/container';
+import { CFBFConstants } from '../../constants/cfbf';
 import type * as fs from 'fs';
 import { Readable } from 'stream';
 

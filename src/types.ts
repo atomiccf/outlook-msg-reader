@@ -95,3 +95,10 @@ export interface DirectoryNode {
     parentSid: number | null;
 }
 
+export interface RawAttachment {
+    storageName: string;
+    data?: Buffer;
+    longName?: string;
+    shortName?: string;
+    mime?: string;
+}

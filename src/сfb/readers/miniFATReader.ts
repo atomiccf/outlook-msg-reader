@@ -1,14 +1,14 @@
 import { Readable } from 'stream';
-import { HeaderInfo } from "../types";
-import { container } from '../di/container';
+import { HeaderInfo } from "../../types";
+import { container } from '../../di/container';
 import { FATReader } from './fatReader';
-import { parseUint32Array } from "../utils/utils";
+import { parseUint32Array } from "../../utils/utils";
 
 export class MiniFATReader {
     private miniFAT: number[] = [];
     private readonly fatReader: FATReader;
 
-    constructor( fatReader: FATReader) {      
+    constructor( fatReader: FATReader) {
         this.fatReader = fatReader;
     }
 
@@ -53,6 +53,6 @@ export class MiniFATReader {
 }
 
 export function MiniFATReaderFactory(): MiniFATReader {
-    const fatReader = container.get<FATReader>('fatReader');   
+    const fatReader = container.get<FATReader>('fatReader');
     return new MiniFATReader(fatReader);
 }
