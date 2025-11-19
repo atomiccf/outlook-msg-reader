@@ -1,10 +1,10 @@
 import { container } from "../di/container";
+import { Readable } from 'stream';
 import { CFBFConstants } from "../constants/cfbf";
 import { FATReader } from "./fatReader";
-import { DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo } from "../types";
-import { Readable } from 'stream';
 import { MiniFATReader } from "./miniFATReader";
 import { MiniStreamReader } from "./miniStreamReader";
+import { DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo } from "../types";
 
 export class DirectoryReader {
     private readonly constants: CFBFConstants;
@@ -15,25 +15,32 @@ export class DirectoryReader {
     private miniFATReader: MiniFATReader | null = null;
     private miniStreamReader: MiniStreamReader | null = null;
 
-    constructor(constants: CFBFConstants) {
+    constructor(
+        constants: CFBFConstants, 
+        fatReader:FATReader, 
+        miniFATReader:MiniFATReader, 
+        miniStreamReader:MiniStreamReader
+    ) {
         this.constants = constants;
+        this.fatReader = fatReader;
+        this.miniFATReader = miniFATReader;
+        this.miniStreamReader = miniStreamReader;
     }
 
     /**
      * Reads all directory sectors using FAT chain
      */
     async readDirectorySectors(input: string | Readable, headerInfo: HeaderInfo): Promise<Buffer> {
-        const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-        this.fatReader = fatReaderFactory();
+      
         // Ensure FAT table is available for this instance
-        await this.fatReader.buildTable(input, headerInfo);
+        await this.fatReader?.buildTable(input, headerInfo);
 
         // Validate starting sector
         const start = headerInfo.dirSectorLocation;
         if (!Number.isInteger(start) || start < 0 || start === 0xFFFFFFFE || start === 0xFFFFFFFF) {
             throw new Error(`Invalid directory start sector: ${start}`);
         }
-        return this.fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo);
+        return this.fatReader?.readChain(input, headerInfo.dirSectorLocation, headerInfo);
     }
 
     /**
@@ -212,39 +219,28 @@ export class DirectoryReader {
      * Initialize MiniFAT and MiniStream from Root Entry stream
      */
     async initializeMiniStream(input: string | Readable, headerInfo: HeaderInfo): Promise<void> {
-        const miniFATFactory = container.resolve<() => MiniFATReader>('miniFATReaderFactory');
-        const miniStreamFactory = container.resolve<() => MiniStreamReader>('miniStreamReaderFactory');
+    
+        await this.miniFATReader?.buildMiniFAT(input, headerInfo);
 
-        this.miniFATReader = miniFATFactory();
-        await this.miniFATReader.buildMiniFAT(input, headerInfo);
-
-        // Ensure FATReader is initialized (should already be from loadDirectory)
-        if (!this.fatReader) {
-            const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-            this.fatReader = fatReaderFactory();
-            await this.fatReader.buildTable(input, headerInfo);
-        }
+        await this.fatReader?.buildTable(input, headerInfo);
+  
         if (!this.root) {
             throw new Error('Root directory not loaded');
         }
         // Root entry stream stores the mini-stream content
-        const rootStreamChain = await this.fatReader.readChain(input, this.root.startingSectorLocation, headerInfo);
+        const rootStreamChain = await this.fatReader?.readChain(input, this.root.startingSectorLocation, headerInfo);
         const rootStreamBuffer = rootStreamChain.subarray(0, this.root.streamSize);
 
-        this.miniStreamReader = miniStreamFactory();
-        await this.miniStreamReader.loadMiniStream(input, headerInfo, rootStreamBuffer);
+        await this.miniStreamReader?.loadMiniStream(input, headerInfo, rootStreamBuffer);
     }
 
     /**
      * Read a stream by SID, choosing MiniStream or regular FAT by size
      */
     async readStreamBySid(input: string | Readable, headerInfo: HeaderInfo, sid: number): Promise<Buffer> {
-        // Ensure FATReader is initialized (should already be from loadDirectory)
-        if (!this.fatReader) {
-            const fatReaderFactory = container.resolve<() => FATReader>('fatReaderFactory');
-            this.fatReader = fatReaderFactory();
-            await this.fatReader.buildTable(input, headerInfo);
-        }
+      
+        await this.fatReader?.buildTable(input, headerInfo);
+   
         const node = this.nodesBySid.get(sid);
         if (!node) throw new Error(`Directory entry SID ${sid} not found`);
 
@@ -259,7 +255,7 @@ export class DirectoryReader {
             });
         }
 
-        const chain = await this.fatReader.readChain(input, node.startingSectorLocation, headerInfo);
+        const chain = await this.fatReader?.readChain(input, node.startingSectorLocation, headerInfo);
         return chain.subarray(0, node.streamSize);
     }
 
@@ -271,7 +267,10 @@ export class DirectoryReader {
 }
 
 export function DirectoryReaderFactory(): DirectoryReader {
-    const constants = container.resolve<CFBFConstants>(CFBFConstants);
-    return new DirectoryReader(constants);
+    const constants = container.get<CFBFConstants>("CFBFConstants");
+    const fatReader = container.get<FATReader>('fatReader');
+    const miniFATFactory = container.get<MiniFATReader>('miniFATReader');
+    const miniStreamFactory = container.get<MiniStreamReader>('miniStreamReader');
+    return new DirectoryReader(constants, fatReader, miniFATFactory, miniStreamFactory);
 }
 

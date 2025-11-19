@@ -1,17 +1,16 @@
-import { setupContainer } from './di/setup';
-import { container } from './di/container';
+import { container}  from './di/container';
 import type { HeaderReader } from './readers/headerReader';
 import type { FATReader } from './readers/fatReader';
 import { Decoder, type SupportedCodePage } from './encoding/decoder';
 import type { HeaderInfo, Msg, MsgBody, MsgAttachment, DirectoryNode } from './types';
 import { DirectoryReader } from './readers/directoryReader';
-setupContainer();
+
 
 export async function parseMsg(filePath: string): Promise<Msg> {
     console.info('[parseMsg] start:', filePath);
     const { headerInfo, getDirectoryTree, readStreamByPath } = await loadDirectory(filePath);
     console.info('[parseMsg] directory loaded. sectorSize:', headerInfo.sectorSize, 'miniSectorSize:', headerInfo.miniSectorSize);
-    const decoder = container.resolve<Decoder>('decoder');
+    const decoder = container.get<Decoder>('decoder');
 
     // Cache codepage to avoid reading it multiple times
     let cachedCodepage: SupportedCodePage | null = null;
