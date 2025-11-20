@@ -1,8 +1,19 @@
 // run.js
 
-const { parseMsg } = require('./dist/index.js');
 const path = require('path');
 const fs = require('fs');
+const jiti = require('jiti')(__filename);
+
+let parseMsg;
+
+try {
+    // Try using built artifacts first (dist)
+    ({ parseMsg } = require('./dist/index.js'));
+    console.info('[run] Using built module from dist/index.js');
+} catch (error) {
+    console.warn('[run] dist build not found or failed to load. Falling back to source via JITI.');
+    ({ parseMsg } = jiti('./src/index.ts'));
+}
 
 async function main() {
     const filePath = process.argv[2] || path.join(__dirname, 'sample', 'sample.msg');
