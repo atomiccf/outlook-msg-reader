@@ -1,7 +1,7 @@
 import type { MsgAttachment } from '../types';
 import type { DirectoryNode } from '../types';
-import { CFBReader } from '../core/loadDirectory';
-import { PropertyReader } from './PropertyReader';
+import type { CFBFReader } from '../сfb/CFBReader';
+import type { PropertyReader } from './PropertyReader';
 import { bufToUnicode, pad2 } from '../utils/utils';
 
 /**
@@ -10,7 +10,7 @@ import { bufToUnicode, pad2 } from '../utils/utils';
  */
 export class AttachmentReader {
     constructor(
-        private readonly cfbReader: CFBReader,
+        private readonly cfbReader: CFBFReader,
         private readonly propertyReader: PropertyReader
     ) {}
 
@@ -58,5 +58,15 @@ export class AttachmentReader {
 
         return attachments;
     }
+}
+
+/**
+ * Factory function to create AttachmentReader
+ */
+export function createAttachmentReader(
+    cfbReader: CFBFReader,
+    propertyReader: PropertyReader
+): AttachmentReader {
+    return new AttachmentReader(cfbReader, propertyReader);
 }
 

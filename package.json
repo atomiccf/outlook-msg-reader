@@ -6,7 +6,8 @@
     "lint": "eslint . --ext .ts",
     "test": "vitest run",
     "build": "tsup src/index.ts --format esm,cjs --dts",
-    "start": "node --loader jiti/esm src/run.ts"
+    "start": "node --loader jiti/esm example.ts",
+    "example": "node --loader jiti/esm example.ts"
   },
   "keywords": [],
   "author": "Viacheslau Vasilyeu",

@@ -1,6 +1,6 @@
-import { Decoder, type SupportedCodePage } from '../encoding/decoder';
-import { CFBReader } from '../core/loadDirectory';
-import { CodePageReader } from './CodePageReader';
+import type { CFBFReader } from "../сfb/CFBReader";
+import type { Decoder } from '../encoding/decoder';
+import type { CodePageReader } from './CodePageReader';
 
 /**
  * Reader for MSG file properties.
@@ -8,7 +8,7 @@ import { CodePageReader } from './CodePageReader';
  */
 export class PropertyReader {
     constructor(
-        private readonly cfbReader: CFBReader,
+        private readonly cfbReader: CFBFReader,
         private readonly decoder: Decoder,
         private readonly codePageReader: CodePageReader
     ) {}
@@ -101,5 +101,16 @@ export class PropertyReader {
         const buf = await this.cfbReader.readStream(path);
         return buf ?? undefined;
     }
+}
+
+/**
+ * Factory function to create PropertyReader
+ */
+export function createPropertyReader(
+    cfbReader: CFBFReader,
+    decoder: Decoder,
+    codePageReader: CodePageReader
+): PropertyReader {
+    return new PropertyReader(cfbReader, decoder, codePageReader);
 }
 

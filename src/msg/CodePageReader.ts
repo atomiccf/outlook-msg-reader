@@ -1,5 +1,5 @@
 import type { SupportedCodePage } from '../encoding/decoder';
-import { CFBReader } from '../core/loadDirectory';
+import type { CFBFReader } from "../сfb/CFBReader";
 
 /**
  * Reader for determining message codepage from MSG file properties.
@@ -8,7 +8,7 @@ import { CFBReader } from '../core/loadDirectory';
 export class CodePageReader {
     private cachedCodepage: SupportedCodePage | null = null;
 
-    constructor(private readonly cfbReader: CFBReader) {}
+    constructor(private readonly cfbReader: CFBFReader) {}
 
     /**
      * Gets the codepage used in the MSG file.
@@ -40,5 +40,12 @@ export class CodePageReader {
 
         return this.cachedCodepage;
     }
+}
+
+/**
+ * Factory function to create CodePageReader
+ */
+export function createCodePageReader(cfbReader: CFBFReader): CodePageReader {
+    return new CodePageReader(cfbReader);
 }
 

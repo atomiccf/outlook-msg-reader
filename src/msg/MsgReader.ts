@@ -1,35 +1,61 @@
 import { Decoder } from '../encoding/decoder';
-import { CFBReader } from '../core/loadDirectory';
+import { CFBFReader, CFBFReaderFactory } from '../сfb/CFBReader';
+import { container } from '../di/container';
 import type { Msg, MsgBody, DirectoryNode } from '../types';
-import { CodePageReader } from './CodePageReader';
-import { PropertyReader } from './PropertyReader';
-import { AttachmentReader } from './AttachmentReader';
+import { createCodePageReader, type CodePageReader } from './CodePageReader';
+import { createPropertyReader, type PropertyReader } from './PropertyReader';
+import { createAttachmentReader, type AttachmentReader } from './AttachmentReader';
 
 /**
  * Main reader class for parsing MSG files.
- * Orchestrates reading of properties, body, attachments, and metadata.
+ * Uses constructor injection for testability and explicit dependencies.
  */
 export class MsgReader {
-    private readonly codePageReader: CodePageReader;
-    private readonly propertyReader: PropertyReader;
-    private readonly attachmentReader: AttachmentReader;
-
+    /**
+     * @param cfbReader - CFBF file reader
+     * @param codePageReader - Reader for message codepage
+     * @param propertyReader - Reader for MSG properties
+     * @param attachmentReader - Reader for attachments
+     */
     private constructor(
-        private readonly cfbReader: CFBReader,
-        decoder: Decoder
-    ) {
-        this.codePageReader = new CodePageReader(cfbReader);
-        this.propertyReader = new PropertyReader(cfbReader, decoder, this.codePageReader);
-        this.attachmentReader = new AttachmentReader(cfbReader, this.propertyReader);
-    }
+        private readonly cfbReader: CFBFReader,
+        private readonly codePageReader: CodePageReader,
+        private readonly propertyReader: PropertyReader,
+        private readonly attachmentReader: AttachmentReader
+    ) {}
 
     /**
      * Factory method to create MsgReader from a file path.
-     * Loads CFBF structure and initializes all dependencies.
+     * Constructs all dependencies and wires them together.
+     * 
+     * @param filePath - Path to .msg file
      */
-    static async fromFile(filePath: string, decoder: Decoder): Promise<MsgReader> {
-        const cfbReader = await CFBReader.fromFile(filePath);
-        return new MsgReader(cfbReader, decoder);
+    static async fromFile(filePath: string): Promise<MsgReader> {
+        // Get global dependencies from container
+        const decoder = container.get<Decoder>('decoder');
+        
+        // Create CFBFReader for this file
+        const cfbReader = CFBFReaderFactory();
+        await cfbReader.load(filePath);
+        
+        // Build dependency chain using local factories
+        const codePageReader = createCodePageReader(cfbReader);
+        const propertyReader = createPropertyReader(cfbReader, decoder, codePageReader);
+        const attachmentReader = createAttachmentReader(cfbReader, propertyReader);
+        
+        return new MsgReader(cfbReader, codePageReader, propertyReader, attachmentReader);
+    }
+
+    /**
+     * For testing: create MsgReader with custom dependencies
+     */
+    static fromDependencies(
+        cfbReader: CFBFReader,
+        codePageReader: CodePageReader,
+        propertyReader: PropertyReader,
+        attachmentReader: AttachmentReader
+    ): MsgReader {
+        return new MsgReader(cfbReader, codePageReader, propertyReader, attachmentReader);
     }
 
     /**
@@ -136,13 +162,7 @@ export class MsgReader {
         return this.attachmentReader.readAttachments();
     }
 
-    /**
-     * Gets the underlying CFBReader for low-level access.
-     */
-    getCFBReader(): CFBReader {
-        return this.cfbReader;
-    }
-
+    
     /**
      * Logs available properties when body is not found (for debugging).
      */
