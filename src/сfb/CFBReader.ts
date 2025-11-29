@@ -30,8 +30,6 @@ export class CFBFReader implements ICFBFReader {
     async load(filePath: string) {
         this.filePath = filePath;
 
-
-
         const { header } = await this.headerReader.readHeaderWithStream(filePath);
 
         this.headerInfo = {

@@ -1,5 +1,3 @@
-import { Readable } from 'stream';
-import { HeaderInfo } from "../../types";
 import { container } from '../../di/container';
 import { MiniFATReader } from './miniFATReader';
 
@@ -19,15 +17,14 @@ export class MiniStreamReader {
 
     /**
      * Loads the entire mini-stream from the root storage stream
-     * @param input - input stream or file path
-     * @param headerInfo - header containing firstDirSector and sectorSize
      * @param rootStreamBuffer - buffer of the root entry that contains mini-stream
+     * @param miniSectorSize
      */
-    async loadMiniStream(input: string | Readable, headerInfo: HeaderInfo, rootStreamBuffer: Buffer) {
+    async loadMiniStream(rootStreamBuffer: Buffer, miniSectorSize: number ) {
         // The mini-stream is stored as a normal stream in FAT
         // Here we just assign it to buffer, it could also be read from input via FATReader
         this.miniStreamBuffer = rootStreamBuffer;
-        this.miniSectorSize = headerInfo.miniSectorSize ?? 64;
+        this.miniSectorSize = miniSectorSize;
     }
 
     /**
@@ -48,7 +45,6 @@ export class MiniStreamReader {
 
             miniSector = this.miniFATReader.getNextMiniSector(miniSector);
         }
-
         return result.subarray(0, entry.streamSize);
     }
 }

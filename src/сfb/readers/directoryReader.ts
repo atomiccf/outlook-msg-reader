@@ -32,9 +32,7 @@ export class DirectoryReader {
         if (!this.fatReader) {
             throw new Error('FATReader is not initialized');
         }
-        await this.fatReader.buildTable(input, headerInfo);
-
-        // Validate starting sector
+             // Validate starting sector
         const start = headerInfo.dirSectorLocation;
         if (!Number.isInteger(start) || start < 0 || start === 0xFFFFFFFE || start === 0xFFFFFFFF) {
             throw new Error(`Invalid directory start sector: ${start}`);
@@ -191,7 +189,7 @@ export class DirectoryReader {
         return this.nodesBySid.get(sid);
     }
 
-    findByPath(path: string[]): DirectoryNode | null {
+    #findByPath(path: string[]): DirectoryNode | null {
         if (!this.root || path.length === 0) return null;
         let current: DirectoryNode | undefined = this.root;
         // Allow paths with or without Root name
@@ -220,8 +218,6 @@ export class DirectoryReader {
 
         await this.miniFATReader?.buildMiniFAT(input, headerInfo);
 
-        await this.fatReader?.buildTable(input, headerInfo);
-
         if (!this.root) {
             throw new Error('Root directory not loaded');
         }
@@ -231,11 +227,11 @@ export class DirectoryReader {
         // Root entry stream stores the mini-stream content
         const rootStreamChain = await this.fatReader.readChain(input, this.root.startingSectorLocation, headerInfo);
         const rootStreamBuffer = rootStreamChain.subarray(0, this.root.streamSize);
-
         if (!this.miniStreamReader) {
             throw new Error('MiniStreamReader is not initialized');
         }
-        await this.miniStreamReader.loadMiniStream(input, headerInfo, rootStreamBuffer);
+
+        await this.miniStreamReader.loadMiniStream(rootStreamBuffer, headerInfo.miniSectorSize );
     }
 
     /**
@@ -246,16 +242,14 @@ export class DirectoryReader {
         if (!this.fatReader) {
             throw new Error('FATReader is not initialized');
         }
-        await this.fatReader.buildTable(input, headerInfo);
-
         const node = this.nodesBySid.get(sid);
         if (!node) throw new Error(`Directory entry SID ${sid} not found`);
 
         const isMini = node.streamSize < headerInfo.miniStreamCutoffSize;
         if (isMini) {
-            if (!this.miniFATReader || !this.miniStreamReader) {
-                await this.initializeMiniStream(input, headerInfo);
-            }
+
+            await this.initializeMiniStream(input, headerInfo);
+
             if (!this.miniStreamReader) {
                 throw new Error('MiniStreamReader is not initialized');
             }
@@ -270,7 +264,8 @@ export class DirectoryReader {
     }
 
     async readStreamByPath(input: string | Readable, headerInfo: HeaderInfo, path: string[]): Promise<Buffer | null> {
-        const node = this.findByPath(path);
+        const node = this.#findByPath(path);
+
         if (!node) return null;
         return this.readStreamBySid(input, headerInfo, node.sid);
     }

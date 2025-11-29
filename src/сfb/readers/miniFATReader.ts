@@ -43,13 +43,6 @@ export class MiniFATReader {
         const next = this.miniFAT[index];
         return next === 0xFFFFFFFE ? null : next;
     }
-
-    /**
-     * Returns the length of the loaded MiniFAT table
-     */
-    getLength(): number {
-        return this.miniFAT.length;
-    }
 }
 
 export function MiniFATReaderFactory(): MiniFATReader {

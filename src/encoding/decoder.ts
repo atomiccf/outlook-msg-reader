@@ -36,6 +36,45 @@ export class Decoder {
         }
         return result;
     }
+
+    decodeRFC2047(header: string): string {
+        header = header.replace(
+            /(=\?[^?]+\?[bqBQ]\?[^?]+\?=)\s+(=\?[^?]+\?[bqBQ]\?[^?]+\?=)/g,
+            "$1$2"
+        );
+        // матчим все encoded-word
+        return header.replace(/=\?([^?]+)\?([bqBQ])\?([^?]+)\?=/g, (_, charset, encoding, text) => {
+            let buf: Buffer;
+            encoding = encoding.toUpperCase();
+
+            if (encoding === 'B') {
+                buf = Buffer.from(text, 'base64');
+            } else if (encoding === 'Q') {
+                const qp = text.replace(/_/g, ' ').replace(/=([A-Fa-f0-9]{2})/g, (_:any, hex:string) =>
+                    String.fromCharCode(parseInt(hex, 16))
+                );
+                buf = Buffer.from(qp, 'binary');
+            } else {
+                return text;
+            }
+
+            // map charset к Node.js
+            const mapCharset = (cs: string) => {
+                switch (cs.toLowerCase()) {
+                    case 'utf-8': return 'utf8';
+                    case 'us-ascii': return 'ascii';
+                    case 'iso-8859-1': return 'latin1';
+                    default: return 'utf8';
+                }
+            };
+
+            try {
+                return buf.toString(mapCharset(charset));
+            } catch {
+                return buf.toString('utf8');
+            }
+        });
+    }
 }
 
 export function DecoderFactory(): Decoder {

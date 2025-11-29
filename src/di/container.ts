@@ -18,7 +18,7 @@ const container = new ServiceLocator()
 // Register dependencies
     container.register("cfbfConstants", new CFBFConstants());
     container.register('fs', fs);
-    container.register("decoder",DecoderFactory);
+    container.factory("decoder",DecoderFactory);
     container.factory("headerReader",HeaderReaderFactory);
     container.factory("fatReader",FATReaderFactory,);
     container.factory("directoryReader",DirectoryReaderFactory);
