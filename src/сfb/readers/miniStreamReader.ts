@@ -20,7 +20,7 @@ export class MiniStreamReader {
      * @param rootStreamBuffer - buffer of the root entry that contains mini-stream
      * @param miniSectorSize
      */
-    async loadMiniStream(rootStreamBuffer: Buffer, miniSectorSize: number ) {
+    async loadMiniStream(rootStreamBuffer: Buffer, miniSectorSize: number): Promise<void> {
         // The mini-stream is stored as a normal stream in FAT
         // Here we just assign it to buffer, it could also be read from input via FATReader
         this.miniStreamBuffer = rootStreamBuffer;
@@ -31,22 +31,60 @@ export class MiniStreamReader {
      * Reads a mini-stream entry using MiniFAT
      * @param entry - DirectoryEntry with startingSectorLocation and streamSize
      */
+
     readMiniStream(entry: { startingSectorLocation: number, streamSize: number }): Buffer {
-        const result = Buffer.alloc(entry.streamSize);
-        let miniSector: number | null = entry.startingSectorLocation;
-        let offset = 0;
+        const { startingSectorLocation, streamSize } = entry;
 
-        while (miniSector !== null) {
-            const srcOffset = miniSector * this.miniSectorSize;
-            const slice = this.miniStreamBuffer.subarray(srcOffset, srcOffset + this.miniSectorSize);
+        const out = Buffer.alloc(streamSize);
+        let filled = 0;
+        let sector: number | null = startingSectorLocation;
 
-            slice.copy(result, offset);
-            offset += slice.length;
+        while (sector !== null && filled < streamSize) {
+            const offset = sector * this.miniSectorSize;
 
-            miniSector = this.miniFATReader.getNextMiniSector(miniSector);
+            // Check bounds to prevent reading beyond buffer
+            if (offset >= this.miniStreamBuffer.length) {
+                break;
+            }
+
+            const available = Math.min(
+                this.miniSectorSize,
+                streamSize - filled,
+                this.miniStreamBuffer.length - offset
+            );
+
+            this.miniStreamBuffer.copy(
+                out,
+                filled,
+                offset,
+                offset + available
+            );
+
+            filled += available;
+
+            sector = this.miniFATReader.getNextMiniSector(sector);
         }
-        return result.subarray(0, entry.streamSize);
+
+        return out;
     }
+    // readMiniStream(entry: { startingSectorLocation: number, streamSize: number }): Buffer {
+    //     console.log(`[readMiniStream] Reading entry:`, entry);
+    //     console.log(`[readMiniStream] miniStreamBuffer size: ${this.miniStreamBuffer.length}, miniSectorSize: ${this.miniSectorSize}`);
+    //     const result = Buffer.alloc(entry.streamSize);
+    //     let miniSector: number | null = entry.startingSectorLocation;
+    //     let offset = 0;
+    //
+    //     while (miniSector !== null) {
+    //         const srcOffset = miniSector * this.miniSectorSize;
+    //         const slice = this.miniStreamBuffer.subarray(srcOffset, srcOffset + this.miniSectorSize);
+    //
+    //         slice.copy(result, offset);
+    //         offset += slice.length;
+    //
+    //         miniSector = this.miniFATReader.getNextMiniSector(miniSector);
+    //     }
+    //     return result.subarray(0, entry.streamSize);
+    // }
 }
 
 
