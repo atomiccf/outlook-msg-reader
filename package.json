@@ -19,8 +19,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsup src/index.ts --format esm,cjs --dts",
-    "inspect:fixtures": "npm run build && node scripts/inspect-fixtures.mjs",
-    "check:fixtures": "npm run build && node scripts/inspect-fixtures.mjs --strict",
     "prepack": "npm run build",
     "example": "node run.js"
   },
