@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMsg, createMsgReader, CFBFReader } from '../src';
+import { parseMsg, createMsgReader } from '../src';
 import { existsSync } from 'fs';
 
 // Skip tests if sample file doesn't exist
