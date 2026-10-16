@@ -1,10 +1,9 @@
 import { CFBFConstants } from '../../constants/cfbf';
 import type * as fs from 'fs';
-import { Readable } from 'stream';
 import type { Resolver } from '../../di/service-locator';
 import { TOKENS } from '../../di/tokens';
 import { InvalidCfbfError } from '../../errors/errors';
-import type { InputSource } from '../InputSource';
+import { createRandomAccessSource, type InputSource, type RandomAccessSource } from '../InputSource';
 
 
 export class HeaderReader {
@@ -19,87 +18,70 @@ export class HeaderReader {
     /**
      * Reads the header from a file (only the first 512 bytes)
      */
-    async readHeaderWithStream(input: InputSource): Promise<{ header: Buffer; stream: Readable }> {
-        const stream = this.#convertInputToStream(input);
-        const header = await this.#readHeaderBytes(stream, this.constants.HEADER_SIZE);
+    async readHeaderWithSource(input: InputSource): Promise<{ header: Buffer; source: RandomAccessSource }> {
+        const source = createRandomAccessSource(input, this.fs);
+        try {
+            const header = await source.read(0, this.constants.HEADER_SIZE);
 
-        if (header.length < this.constants.HEADER_SIZE) {
-            throw new InvalidCfbfError('CFBF header is incomplete');
+            if (header.length < this.constants.HEADER_SIZE) {
+                throw new InvalidCfbfError('CFBF header is incomplete');
+            }
+            this.#validateHeader(header);
+
+            return { header, source };
+        } catch (error) {
+            await source.close();
+            throw error;
         }
-        if (!this.#validateSignatures(header)) {
+    }
+
+    #validateHeader(headerBytes: Buffer): void {
+        const signature = headerBytes.subarray(0, 8);
+        const expected = Buffer.from(this.constants.CFBF_SIGNATURE);
+        if (!signature.equals(expected)) {
             throw new InvalidCfbfError('Invalid CFBF file signature');
         }
 
-        return { header, stream };
-    }
-
-    /**
-     * Private method: reads exactly `length` bytes from the stream
-     */
-    async #readHeaderBytes(stream: Readable, length: number): Promise<Buffer> {
-        return new Promise((resolve, reject) => {
-            const chunks: Buffer[] = [];
-            let bytesRead = 0;
-
-            const onData = (chunk: Buffer) => {
-                if (bytesRead + chunk.length >= length) {
-                    const needed = length - bytesRead;
-                    chunks.push(chunk.subarray(0, needed));
-                    bytesRead += needed;
-
-                    cleanup();
-
-                    // push leftover back to the stream
-                    const leftover = chunk.subarray(needed);
-                    if (leftover.length > 0) stream.unshift(leftover);
-
-                    resolve(Buffer.concat(chunks));
-                } else {
-                    chunks.push(chunk);
-                    bytesRead += chunk.length;
-                }
-            };
-
-            const onEnd = () => {
-                cleanup();
-                resolve(Buffer.concat(chunks)); // in case file is smaller than `length`
-            };
-
-            const onError = (err: Error) => {
-                cleanup();
-                reject(err);
-            };
-
-            const cleanup = () => {
-                stream.removeListener('data', onData);
-                stream.removeListener('end', onEnd);
-                stream.removeListener('error', onError);
-            };
-
-            stream.on('data', onData);
-            stream.on('end', onEnd);
-            stream.on('error', onError);
-        });
-    }
-
-
-    /**
-     * Converts a file path into a ReadStream (reads only the first 512 bytes)
-     */
-    #convertInputToStream(input: InputSource): Readable {
-        if (Buffer.isBuffer(input)) return Readable.from([input]);
-
-        if (!this.fs?.createReadStream) {
-            throw new Error('FS module not available');
+        if (!headerBytes.subarray(0x08, 0x18).every(byte => byte === 0)) {
+            throw new InvalidCfbfError('CFBF header CLSID must be zero');
         }
 
-        return this.fs.createReadStream(input);
-    }
+        const majorVersion = headerBytes.readUInt16LE(0x1A);
+        if (majorVersion !== 3 && majorVersion !== 4) {
+            throw new InvalidCfbfError(`Unsupported CFBF major version: ${majorVersion}`);
+        }
 
-    #validateSignatures(headerBytes: Buffer): boolean {
-        const signature = headerBytes.subarray(0, 8);
-        const expected = Buffer.from(this.constants.CFBF_SIGNATURE);
-        return signature.equals(expected);
+        const byteOrder = headerBytes.readUInt16LE(0x1C);
+        if (byteOrder !== 0xFFFE) {
+            throw new InvalidCfbfError(`Invalid CFBF byte order: 0x${byteOrder.toString(16).padStart(4, '0')}`);
+        }
+
+        const sectorShift = headerBytes.readUInt16LE(0x1E);
+        const expectedSectorShift = majorVersion === 3 ? 9 : 12;
+        if (sectorShift !== expectedSectorShift) {
+            throw new InvalidCfbfError(
+                `Invalid sector shift ${sectorShift} for CFBF version ${majorVersion}`
+            );
+        }
+
+        const miniSectorShift = headerBytes.readUInt16LE(0x20);
+        if (miniSectorShift !== 6) {
+            throw new InvalidCfbfError(`Invalid mini sector shift: ${miniSectorShift}`);
+        }
+
+        if (!headerBytes.subarray(0x22, 0x28).every(byte => byte === 0)) {
+            throw new InvalidCfbfError('CFBF header reserved bytes must be zero');
+        }
+
+        const directorySectorCount = headerBytes.readUInt32LE(0x28);
+        if (majorVersion === 3 && directorySectorCount !== 0) {
+            throw new InvalidCfbfError('Version 3 CFBF files must declare zero directory sectors');
+        }
+
+        const miniStreamCutoff = headerBytes.readUInt32LE(0x38);
+        if (miniStreamCutoff !== 0x1000) {
+            throw new InvalidCfbfError(`Invalid mini stream cutoff: ${miniStreamCutoff}`);
+        }
     }
 
 }

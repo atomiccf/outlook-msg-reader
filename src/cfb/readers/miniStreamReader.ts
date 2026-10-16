@@ -1,6 +1,7 @@
 import { MiniFATReader } from './miniFATReader';
 import type { Resolver } from '../../di/service-locator';
 import { TOKENS } from '../../di/tokens';
+import { CorruptedSectorChainError } from '../../errors/errors';
 
 
 /**
@@ -39,31 +40,39 @@ export class MiniStreamReader {
         const out = Buffer.alloc(streamSize);
         let filled = 0;
         let sector: number | null = startingSectorLocation;
+        const visited = new Set<number>();
 
         while (sector !== null && filled < streamSize) {
-            const offset = sector * this.miniSectorSize;
-
-            // Check bounds to prevent reading beyond buffer
-            if (offset >= this.miniStreamBuffer.length) {
-                break;
+            if (visited.has(sector)) {
+                throw new CorruptedSectorChainError('MiniFAT sector chain loop detected');
             }
+            visited.add(sector);
 
-            const available = Math.min(
-                this.miniSectorSize,
-                streamSize - filled,
-                this.miniStreamBuffer.length - offset
-            );
+            const offset = sector * this.miniSectorSize;
+            const required = Math.min(this.miniSectorSize, streamSize - filled);
+
+            if (!Number.isSafeInteger(offset) || offset < 0 || offset + required > this.miniStreamBuffer.length) {
+                throw new CorruptedSectorChainError(
+                    `Mini stream sector ${sector} exceeds the root mini stream bounds`
+                );
+            }
 
             this.miniStreamBuffer.copy(
                 out,
                 filled,
                 offset,
-                offset + available
+                offset + required
             );
 
-            filled += available;
-
-            sector = this.miniFATReader.getNextMiniSector(sector);
+            filled += required;
+            if (filled < streamSize) {
+                sector = this.miniFATReader.getNextMiniSector(sector);
+                if (sector === null) {
+                    throw new CorruptedSectorChainError(
+                        `MiniFAT chain ended after ${filled} bytes; expected ${streamSize}`
+                    );
+                }
+            }
         }
 
         return out;

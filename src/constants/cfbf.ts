@@ -5,6 +5,7 @@ export class CFBFConstants {
     readonly DEFAULT_MINI_SECTOR_SIZE = 64;
     readonly END_OF_CHAIN = 0xFFFFFFFE;
     readonly FREE_SECTOR = 0xFFFFFFFF;
-    readonly DIFAT_SECTOR = 0xFFFFFFFD;
-    readonly FAT_SECTOR = 0xFFFFFFFC;
+    readonly MAX_REGULAR_SECTOR = 0xFFFFFFFA;
+    readonly DIFAT_SECTOR = 0xFFFFFFFC;
+    readonly FAT_SECTOR = 0xFFFFFFFD;
 }

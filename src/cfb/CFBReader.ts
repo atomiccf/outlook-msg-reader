@@ -5,13 +5,14 @@ import { DirectoryReader } from './readers/directoryReader';
 import type { HeaderInfo } from '../types';
 import type { Resolver } from '../di/service-locator';
 import { TOKENS } from '../di/tokens';
-import type { InputSource } from './InputSource';
+import type { InputSource, RandomAccessSource } from './InputSource';
 import { InvalidCfbfError } from '../errors/errors';
 
 export interface ICFBFReader {
     load(input: InputSource): Promise<void>;
     readStream(path: string[]): Promise<Buffer | null>;
     readStreamAsString(path: string[], propertyType?: number): Promise<string | null>;
+    close(): Promise<void>;
     getTree(): DirectoryNode | null;
     getHeaderInfo(): HeaderInfo;
 }
@@ -19,7 +20,7 @@ export interface ICFBFReader {
 export class CFBFReader implements ICFBFReader {
     private tree: DirectoryNode | null = null;
     private headerInfo!: HeaderInfo;
-    private input!: InputSource;
+    private input!: RandomAccessSource;
     private readonly headerReader: HeaderReader;
     private readonly fatReader: FATReader;
     private readonly directoryReader: DirectoryReader;
@@ -31,11 +32,12 @@ export class CFBFReader implements ICFBFReader {
     }
 
     async load(input: InputSource) {
-        this.input = input;
-
-        const { header } = await this.headerReader.readHeaderWithStream(input);
+        const { header, source } = await this.headerReader.readHeaderWithSource(input);
+        this.input = source;
 
         this.headerInfo = {
+            majorVersion: header.readUInt16LE(0x1A) as 3 | 4,
+            minorVersion: header.readUInt16LE(0x18),
             sectorSize: 1 << header.readUInt16LE(30),
             miniSectorSize: 1 << header.readUInt16LE(32),
             numFATSectors: header.readUInt32LE(44),
@@ -44,13 +46,15 @@ export class CFBFReader implements ICFBFReader {
             miniStreamCutoffSize: header.readUInt32LE(56),
             miniFatStartSector: header.readUInt32LE(0x3C),
             miniFatSectorCount: header.readUInt32LE(0x40),
+            difatStartSector: header.readUInt32LE(0x44),
+            numDIFATSectors: header.readUInt32LE(0x48),
             fatSectorLocations: Array.from({ length: 109 }, (_, i) => header.readUInt32LE(76 + i * 4)).filter(v => v !== 0xFFFFFFFF),
             signature: header.subarray(0, 8),
             rawHeader: header
         };
 
-        await this.fatReader.buildTable(input, this.headerInfo);
-        await this.directoryReader.loadDirectory(input, this.headerInfo);
+        await this.fatReader.buildTable(source, this.headerInfo);
+        await this.directoryReader.loadDirectory(source, this.headerInfo);
 
         this.tree = this.directoryReader.getTree();
     }
@@ -91,6 +95,10 @@ export class CFBFReader implements ICFBFReader {
 
     getHeaderInfo(): HeaderInfo {
         return this.headerInfo;
+    }
+
+    async close(): Promise<void> {
+        await this.input?.close();
     }
 }
 

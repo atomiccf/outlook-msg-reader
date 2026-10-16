@@ -19,7 +19,11 @@ import type { InputSource } from './cfb/InputSource';
  */
 export async function parseMsg(input: InputSource): Promise<Msg> {
     const reader = await createScopedMsgReader(input);
-    return reader.parse();
+    try {
+        return await reader.parse();
+    } finally {
+        await reader.close();
+    }
 }
 
 /**
@@ -50,6 +54,8 @@ export type {
     Msg, 
     MsgBody, 
     MsgAttachment,
+    MsgMetadata,
+    MsgImportance,
     MsgRecipient,
     DirectoryNode,
     HeaderInfo,

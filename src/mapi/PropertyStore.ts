@@ -16,6 +16,8 @@ export interface PropertyReadOptions {
   types?: PropertyType[];
 }
 
+const ROOT_STORAGE = ['Root Entry'];
+
 export class PropertyStore {
   private readonly locations = new Map<string, PropertyLocation[]>();
 
@@ -28,23 +30,22 @@ export class PropertyStore {
     if (tree) this.indexNode(tree);
   }
 
-  findStorages(prefix: string): string[][] {
+  findStorages(prefix: string, storagePath: string[] = ROOT_STORAGE): string[][] {
     const tree = this.cfbReader.getTree();
     if (!tree) return [];
-    const result: string[][] = [];
-    const visit = (node: DirectoryNode, parent: string[]): void => {
-      const path = [...parent, node.name];
-      if (node.name.startsWith(prefix)) result.push(path);
-      for (const child of node.children) visit(child, path);
-    };
-    visit(tree, []);
-    return result;
+    let parent: DirectoryNode | undefined = tree;
+    const startIndex = storagePath[0] === tree.name ? 1 : 0;
+    for (let index = startIndex; index < storagePath.length; index++) {
+      parent = parent.children.find(child => child.name === storagePath[index]);
+      if (!parent) return [];
+    }
+    return parent.children
+      .filter(child => child.name.startsWith(prefix))
+      .map(child => [...storagePath, child.name]);
   }
 
   async read(ids: string[], options: PropertyReadOptions = {}): Promise<string | Buffer | undefined> {
-    const candidates = ids.flatMap((id) => this.locations.get(this.normalizeId(id)) ?? []);
-    const rootFirst = [...candidates].sort((a, b) => a.path.length - b.path.length);
-    return this.readLocations(rootFirst, options);
+    return this.readAt(ROOT_STORAGE, ids, options);
   }
 
   async readAt(
@@ -76,7 +77,7 @@ export class PropertyStore {
   ): Promise<string | Buffer | undefined> {
     const propertyId = this.namedProperties.getPropertyId(guid, name);
     if (propertyId === undefined) return undefined;
-    return this.read([propertyId.toString(16).padStart(4, '0')], options);
+    return this.readAt(ROOT_STORAGE, [propertyId.toString(16).padStart(4, '0')], options);
   }
 
   private indexNode(node: DirectoryNode, parent: string[] = []): void {

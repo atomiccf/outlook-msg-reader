@@ -1,4 +1,3 @@
-import {Readable} from 'stream';
 import {CFBFConstants} from "../../constants/cfbf";
 import {FATReader} from "./fatReader";
 import {MiniFATReader} from "./miniFATReader";
@@ -7,7 +6,7 @@ import {DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo} from "
 import type { Resolver } from '../../di/service-locator';
 import { TOKENS } from '../../di/tokens';
 import { CorruptedSectorChainError } from '../../errors/errors';
-import type { InputSource } from '../InputSource';
+import type { RandomAccessSource } from '../InputSource';
 
 export class DirectoryReader {
     private entries: DirectoryEntryRaw[] = [];
@@ -34,7 +33,7 @@ export class DirectoryReader {
     /**
      * Reads all directory sectors using FAT chain
      */
-    async readDirectorySectors(input: InputSource | Readable, headerInfo: HeaderInfo): Promise<Buffer> {
+    async readDirectorySectors(input: RandomAccessSource, headerInfo: HeaderInfo): Promise<Buffer> {
 
         // Ensure FAT table is available for this instance
         if (!this.fatReader) {
@@ -45,13 +44,16 @@ export class DirectoryReader {
         if (start === 0xFFFFFFFE || start === 0xFFFFFFFF) {
             throw new CorruptedSectorChainError(`Invalid directory start sector: ${start}`);
         }
-        return this.fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo);
+        const expectedSize = headerInfo.numDirectorySectors > 0
+            ? headerInfo.numDirectorySectors * headerInfo.sectorSize
+            : undefined;
+        return this.fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo, expectedSize);
     }
 
     /**
      * Parse 128-byte directory entries from a concatenated directory sector buffer
      */
-    parseDirectoryEntries(buffer: Buffer): DirectoryEntryRaw[] {
+    parseDirectoryEntries(buffer: Buffer, headerInfo?: HeaderInfo): DirectoryEntryRaw[] {
         const ENTRY_SIZE = 128;
         const entries: DirectoryEntryRaw[] = [];
         const total = Math.floor(buffer.length / ENTRY_SIZE);
@@ -63,7 +65,17 @@ export class DirectoryReader {
             // name and length
             const nameLength = view.readUInt16LE(0x40);
             let name = '';
-            if (nameLength >= 2) {
+            if (nameLength !== 0) {
+                if (nameLength < 2 || nameLength > 64 || nameLength % 2 !== 0) {
+                    throw new CorruptedSectorChainError(
+                        `Invalid directory entry name length ${nameLength} at SID ${sid}`
+                    );
+                }
+                if (view.readUInt16LE(nameLength - 2) !== 0) {
+                    throw new CorruptedSectorChainError(
+                        `Directory entry name is not null-terminated at SID ${sid}`
+                    );
+                }
                 const nameBytes = view.subarray(0x00, nameLength - 2); // trim trailing null
                 name = nameBytes.toString('utf16le').replace(/\0+$/, '');
             }
@@ -92,7 +104,16 @@ export class DirectoryReader {
                 : (BigInt(modifiedTimeHigh) << 32n) + BigInt(modifiedTimeLow);
 
             const startingSectorLocation = view.readUInt32LE(0x74);
-            const streamSize = Number(view.readBigUInt64LE(0x78));
+            const rawStreamSize = view.readBigUInt64LE(0x78);
+            if (headerInfo?.majorVersion === 3 && rawStreamSize > 0xFFFFFFFFn) {
+                throw new CorruptedSectorChainError(
+                    `Version 3 directory entry SID ${sid} has a stream size larger than 32 bits`
+                );
+            }
+            const streamSize = Number(rawStreamSize);
+            if (!Number.isSafeInteger(streamSize)) {
+                throw new CorruptedSectorChainError(`Unsafe stream size at directory entry SID ${sid}`);
+            }
 
             // Basic validation of type
             if (![
@@ -101,7 +122,10 @@ export class DirectoryReader {
                 DirectoryEntryType.Stream,
                 DirectoryEntryType.Root
             ].includes(type)) {
-                continue;
+                throw new CorruptedSectorChainError(`Invalid directory entry type ${type} at SID ${sid}`);
+            }
+            if (type !== DirectoryEntryType.Empty && (colorFlag !== 0 && colorFlag !== 1)) {
+                throw new CorruptedSectorChainError(`Invalid directory entry color ${colorFlag} at SID ${sid}`);
             }
 
             entries.push({
@@ -136,7 +160,8 @@ export class DirectoryReader {
         for (const e of this.entries) {
             entryBySid.set(e.sid, e);
 
-            // Use original enum values: Storage=0x01, Stream=0x02, Root=0x05
+            if (e.type === DirectoryEntryType.Empty) continue;
+
             const node: DirectoryNode = {
                 sid: e.sid,
                 name: e.name,
@@ -150,36 +175,61 @@ export class DirectoryReader {
         }
 
         const NOSTREAM = -1;
+        const assigned = new Set<number>();
+
+        const getReferencedEntry = (sid: number): DirectoryEntryRaw => {
+            if (!Number.isInteger(sid) || sid < 0) {
+                throw new CorruptedSectorChainError(`Invalid directory SID reference: ${sid}`);
+            }
+            const entry = entryBySid.get(sid);
+            if (!entry || entry.type === DirectoryEntryType.Empty) {
+                throw new CorruptedSectorChainError(`Directory SID ${sid} does not reference an active entry`);
+            }
+            return entry;
+        };
 
         const traverseSiblingTree = (
             sid: number,
             parentSid: number | null,
-            acc: DirectoryNode[],
-            visited: Set<number>
-        ) => {
-            if (sid === NOSTREAM || sid === 0xFFFFFFFF) return;
-            if (visited.has(sid)) return;
+        ): DirectoryNode[] => {
+            const result: DirectoryNode[] = [];
+            const visited = new Set<number>();
+            const stack: number[] = [];
+            let current = sid;
 
-            visited.add(sid);
+            while (current !== NOSTREAM && current !== 0xFFFFFFFF || stack.length > 0) {
+                while (current !== NOSTREAM && current !== 0xFFFFFFFF) {
+                    if (visited.has(current)) {
+                        throw new CorruptedSectorChainError(`Directory sibling tree loop detected at SID ${current}`);
+                    }
+                    visited.add(current);
+                    const entry = getReferencedEntry(current);
+                    stack.push(current);
+                    current = entry.leftSiblingSid;
+                }
 
-            const entry = entryBySid.get(sid);
-            if (!entry) return;
+                const currentSid = stack.pop();
+                if (currentSid === undefined) break;
+                const entry = getReferencedEntry(currentSid);
+                if (assigned.has(currentSid)) {
+                    throw new CorruptedSectorChainError(`Directory SID ${currentSid} is referenced multiple times`);
+                }
+                assigned.add(currentSid);
 
-            traverseSiblingTree(entry.leftSiblingSid, parentSid, acc, visited);
+                const node = this.nodesBySid.get(currentSid)!;
+                node.parentSid = parentSid;
+                result.push(node);
+                current = entry.rightSiblingSid;
+            }
 
-            const node = this.nodesBySid.get(sid)!;
-            node.parentSid = parentSid;
-            acc.push(node);
-
-            traverseSiblingTree(entry.rightSiblingSid, parentSid, acc, visited);
+            return result;
         };
 
 
         const buildSubtree = (sid: number, parentSid: number | null): DirectoryNode[] => {
             if (sid === NOSTREAM || sid === 0xFFFFFFFF) return [];
 
-            const list: DirectoryNode[] = [];
-            traverseSiblingTree(sid, parentSid, list, new Set());
+            const list = traverseSiblingTree(sid, parentSid);
 
             for (const node of list) {
                 const entry = entryBySid.get(node.sid)!;
@@ -191,14 +241,17 @@ export class DirectoryReader {
             return list;
         };
 
-        const rootEntry = this.entries.find(e => e.type === DirectoryEntryType.Root);
-        if (!rootEntry) {
-            this.root = null;
-            return null;
+        const rootEntry = this.entries[0];
+        if (!rootEntry || rootEntry.type !== DirectoryEntryType.Root || rootEntry.name !== 'Root Entry') {
+            throw new CorruptedSectorChainError('Directory SID 0 must be the Root Entry');
+        }
+        if (this.entries.slice(1).some(entry => entry.type === DirectoryEntryType.Root)) {
+            throw new CorruptedSectorChainError('Directory contains multiple root entries');
         }
 
         const rootNode = this.nodesBySid.get(rootEntry.sid)!;
         rootNode.parentSid = null;
+        assigned.add(rootEntry.sid);
         rootNode.children = buildSubtree(rootEntry.childSid, rootNode.sid);
         this.root = rootNode;
 
@@ -226,17 +279,17 @@ export class DirectoryReader {
     /**
      * Convenience: end-to-end load of directory (read sectors, parse, build tree)
      */
-    async loadDirectory(input: InputSource | Readable, headerInfo: HeaderInfo): Promise<DirectoryNode | null> {
+    async loadDirectory(input: RandomAccessSource, headerInfo: HeaderInfo): Promise<DirectoryNode | null> {
         this.miniStreamInitialized = false;
         const buffer = await this.readDirectorySectors(input, headerInfo);
-        this.parseDirectoryEntries(buffer);
+        this.parseDirectoryEntries(buffer, headerInfo);
         return this.buildDirectoryTree();
     }
 
     /**
      * Initialize MiniFAT and MiniStream from Root Entry stream
      */
-    async initializeMiniStream(input: InputSource | Readable, headerInfo: HeaderInfo): Promise<void> {
+    async initializeMiniStream(input: RandomAccessSource, headerInfo: HeaderInfo): Promise<void> {
         if (this.miniStreamInitialized) return;
 
         await this.miniFATReader?.buildMiniFAT(input, headerInfo);
@@ -254,7 +307,8 @@ export class DirectoryReader {
         const rootChain = await this.fatReader.readChain(
             input,
             this.root.startingSectorLocation,
-            headerInfo
+            headerInfo,
+            this.root.streamSize
         );
 
         const rootStreamBuffer = rootChain.subarray(0, this.root.streamSize);
@@ -271,7 +325,7 @@ export class DirectoryReader {
      * Read a stream by SID, choosing MiniStream or regular FAT by size
      */
     async readStreamBySid(
-        input: InputSource | Readable,
+        input: RandomAccessSource,
         headerInfo: HeaderInfo,
         sid: number
     ): Promise<Buffer> {
@@ -313,13 +367,14 @@ export class DirectoryReader {
         const chain = await this.fatReader.readChain(
             input,
             node.startingSectorLocation,
-            headerInfo
+            headerInfo,
+            node.streamSize
         );
 
         return chain.subarray(0, node.streamSize);
     }
 
-    async readStreamByPath(input: InputSource | Readable, headerInfo: HeaderInfo, path: string[]): Promise<Buffer | null> {
+    async readStreamByPath(input: RandomAccessSource, headerInfo: HeaderInfo, path: string[]): Promise<Buffer | null> {
         const node = this.#findByPath(path);
 
         if (!node) return null;

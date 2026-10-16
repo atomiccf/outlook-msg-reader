@@ -14,6 +14,7 @@ import { AttachmentReader } from '../msg/AttachmentReader';
 import { BodyReader } from '../msg/BodyReader';
 import { CodePageReader } from '../msg/CodePageReader';
 import { MsgReader } from '../msg/MsgReader';
+import { MetadataReader } from '../msg/MetadataReader';
 import { NamedPropertyReader } from '../msg/NamedPropertyReader';
 import { PropertyReader } from '../msg/PropertyReader';
 import { RecipientReader } from '../msg/RecipientReader';
@@ -56,9 +57,11 @@ export function createContainer(): ServiceLocator {
   result.factory(TOKENS.senderReader, (r) => new SenderReader(r.get(TOKENS.propertyStore)));
   result.factory(TOKENS.recipientReader, (r) => new RecipientReader(r.get(TOKENS.propertyStore), r.get(TOKENS.propertyStreamReader), r.get(TOKENS.logger)));
   result.factory(TOKENS.attachmentReader, (r) => new AttachmentReader(r.get(TOKENS.cfbReader), r.get(TOKENS.propertyStore), r.get(TOKENS.propertyStreamReader)));
+  result.factory(TOKENS.metadataReader, (r) => new MetadataReader(r.get(TOKENS.propertyStore), r.get(TOKENS.propertyStreamReader)));
   result.factory(TOKENS.msgReader, (r) => new MsgReader(
     r.get(TOKENS.cfbReader), r.get(TOKENS.subjectReader), r.get(TOKENS.bodyReader),
     r.get(TOKENS.senderReader), r.get(TOKENS.recipientReader), r.get(TOKENS.attachmentReader),
+    r.get(TOKENS.metadataReader),
   ));
   return result;
 }

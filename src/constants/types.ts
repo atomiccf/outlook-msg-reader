@@ -21,6 +21,8 @@ export interface IMessageProperties {
     senderAddressType?: string;
     originalSenderName?: string;
     originalSenderEmail?: string;
+    senderSmtpAddress?: string;
+    sentRepresentingSmtpAddress?: string;
     senderType?: number;
 
     subject?: string;
@@ -55,6 +57,8 @@ export interface IMessageProperties {
     displayName?: string;
     recipientName?: string;
     recipientEmail?: string;
+    recipientSmtpAddress?: string;
+    recipientDisplayName?: string;
     displayTo?: string;
     displayCc?: string;
     displayBcc?: string;

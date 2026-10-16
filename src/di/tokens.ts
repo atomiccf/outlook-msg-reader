@@ -14,6 +14,7 @@ import type { AttachmentReader } from '../msg/AttachmentReader';
 import type { BodyReader } from '../msg/BodyReader';
 import type { CodePageReader } from '../msg/CodePageReader';
 import type { MsgReader } from '../msg/MsgReader';
+import type { MetadataReader } from '../msg/MetadataReader';
 import type { NamedPropertyReader } from '../msg/NamedPropertyReader';
 import type { PropertyReader } from '../msg/PropertyReader';
 import type { RecipientReader } from '../msg/RecipientReader';
@@ -42,5 +43,6 @@ export const TOKENS = {
   senderReader: createToken<SenderReader>('senderReader'),
   recipientReader: createToken<RecipientReader>('recipientReader'),
   attachmentReader: createToken<AttachmentReader>('attachmentReader'),
+  metadataReader: createToken<MetadataReader>('metadataReader'),
   msgReader: createToken<MsgReader>('msgReader'),
 } as const;

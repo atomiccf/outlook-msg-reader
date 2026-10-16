@@ -25,8 +25,8 @@ export class RecipientReader {
       try {
         const type = (await this.propertyStream.readNumber(storagePath, ['0C15'])) ?? 1;
         const recipient = {
-          name: (await this.properties.readStringAt(storagePath, ['3001', '39FE'])) ?? '',
-          email: (await this.properties.readStringAt(storagePath, ['39FF', '0C1F', '3003'])) ?? '',
+          name: (await this.properties.readStringAt(storagePath, ['3001', '39FF'])) ?? '',
+          email: (await this.properties.readStringAt(storagePath, ['39FE', '3003', '0C1F'])) ?? '',
         };
         if (!recipient.name && !recipient.email) continue;
         (type === 2 ? cc : type === 3 ? bcc : to).push(recipient);

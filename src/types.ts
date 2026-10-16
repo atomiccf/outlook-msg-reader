@@ -16,6 +16,16 @@ export interface MsgRecipient {
     email: string;
 }
 
+export type MsgImportance = 'low' | 'normal' | 'high';
+
+export interface MsgMetadata {
+    messageId?: string;
+    sentAt?: Date;
+    receivedAt?: Date;
+    transportHeaders?: string;
+    importance?: MsgImportance;
+}
+
 export interface Msg {
     subject: string;
     from: MsgRecipient;
@@ -24,9 +34,16 @@ export interface Msg {
     bcc?: MsgRecipient[];
     body: MsgBody;
     attachments: MsgAttachment[];
+    metadata?: MsgMetadata;
 }
 
 export interface HeaderInfo {
+    /** CFBF major version validated from the header */
+    majorVersion?: 3 | 4;
+
+    /** CFBF minor version reported by the header */
+    minorVersion?: number;
+
     /** Size of a regular sector in bytes (2^n, where n = sectorShift) */
     sectorSize: number;
 
@@ -44,6 +61,12 @@ export interface HeaderInfo {
 
     /** Array of FAT sector indices (from DIFAT area in the header) */
     fatSectorLocations: number[];
+
+    /** First sector in the extended DIFAT chain, or ENDOFCHAIN when absent */
+    difatStartSector?: number;
+
+    /** Number of sectors in the extended DIFAT chain */
+    numDIFATSectors?: number;
 
     /** Cutoff size for using mini-sectors (streams smaller than this use mini-streams) */
     miniStreamCutoffSize: number;

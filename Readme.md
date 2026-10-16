@@ -12,17 +12,24 @@ npm install msg
 
 ```ts
 import { parseMsg, createMsgReader } from 'msg';
+import { createReadStream } from 'node:fs';
 
 const message = await parseMsg('email.msg');
 console.log(message.subject);
 
 const reader = await createMsgReader('email.msg');
 const attachments = await reader.getAttachments();
+await reader.close();
+
+const streamedMessage = await parseMsg(createReadStream('email.msg'));
 ```
 
-Both functions accept a file path or a `Buffer`. `parseMsg` returns the subject, sender,
+Both functions accept a file path, a `Buffer`, or a Node.js `Readable` stream. Stream input is
+buffered incrementally so the compound-file parser can perform the random reads required by CFBF.
+`parseMsg` returns the subject, sender,
 recipients, available body formats, and attachments. `createMsgReader` allows individual
-parts to be read on demand. Attachments expose a `kind` of `file` or `embedded-message`.
+parts to be read on demand; call `reader.close()` when it is no longer needed. Attachments expose
+a `kind` of `file` or `embedded-message`.
 
 ## Errors
 

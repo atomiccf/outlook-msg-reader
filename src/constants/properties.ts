@@ -62,8 +62,8 @@ export const PROPERTY_MAPPING: IPropertyMapping = {
     '0c1a': 'senderName',
     '0c1f': 'senderEmail',
     '0c1e': 'senderAddressType',
-    '5d02': 'originalSenderName',
-    '5d01': 'originalSenderEmail',
+    '5d02': 'sentRepresentingSmtpAddress',
+    '5d01': 'senderSmtpAddress',
     '0c12': 'senderType',
 
     // Subject
@@ -78,6 +78,11 @@ export const PROPERTY_MAPPING: IPropertyMapping = {
     '3008': 'lastModificationTime',
     '0e06': 'messageDeliveryTime',
 
+    // Internet message metadata
+    '0017': 'importance',
+    '007d': 'transportMessageHeaders',
+    '1035': 'internetMessageId',
+
      // Attachments
     '3701': 'attachmentData',
     '3703': 'extension',
@@ -91,8 +96,8 @@ export const PROPERTY_MAPPING: IPropertyMapping = {
 
     // Recipients
     '3001': 'displayName',
-    '39fe': 'recipientName',
-    '39ff': 'recipientEmail',
+    '39fe': 'recipientSmtpAddress',
+    '39ff': 'recipientDisplayName',
     '0e04': 'displayTo',
     '0e03': 'displayCc',
     '0e02': 'displayBcc',

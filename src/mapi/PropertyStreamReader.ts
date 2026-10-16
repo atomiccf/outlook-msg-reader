@@ -58,11 +58,18 @@ export class PropertyStreamReader {
     if (!stream) return result;
 
     const headerSize = this.getHeaderSize(storagePath);
-    if (stream.length < headerSize || (stream.length - headerSize) % 16 !== 0) {
+    if (stream.length < headerSize) {
       throw new PropertyDecodeError(`Invalid property stream at ${storagePath.join(' / ')}`);
     }
 
-    for (let offset = headerSize; offset + 16 <= stream.length; offset += 16) {
+    const propertyBytes = stream.length - headerSize;
+    const paddingSize = propertyBytes % 16;
+    const entriesEnd = stream.length - paddingSize;
+    if (paddingSize > 0 && !stream.subarray(entriesEnd).every(byte => byte === 0)) {
+      throw new PropertyDecodeError(`Invalid property stream at ${storagePath.join(' / ')}`);
+    }
+
+    for (let offset = headerSize; offset < entriesEnd; offset += 16) {
       const type = stream.readUInt16LE(offset);
       const id = stream.readUInt16LE(offset + 2).toString(16).toUpperCase().padStart(4, '0');
       const value = this.decodeFixedValue(stream, offset + 8, type);
@@ -92,6 +99,7 @@ export class PropertyStreamReader {
       case 0x0014: return buffer.readBigInt64LE(offset);
       case 0x0040: {
         const fileTime = buffer.readBigUInt64LE(offset);
+        if (fileTime === 0n) return undefined;
         return new Date(Number(fileTime / 10_000n - 11_644_473_600_000n));
       }
       default: return undefined;

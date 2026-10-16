@@ -7,7 +7,7 @@ export class SenderReader {
   async read(): Promise<MsgRecipient> {
     return {
       name: (await this.properties.readString(['0C1A', '0042'])) ?? '',
-      email: (await this.properties.readString(['0C1F', '0065'])) ?? '',
+      email: (await this.properties.readString(['5D01', '5D02', '0C1F', '0065'])) ?? '',
     };
   }
 }
