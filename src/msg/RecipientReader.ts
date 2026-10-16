@@ -35,9 +35,13 @@ export class RecipientReader {
       }
     }
 
-    if (!to.length && !cc.length && !bcc.length) {
+    if (!to.length) {
       to.push(...this.parseDisplay((await this.properties.readString(['0E04'])) ?? ''));
+    }
+    if (!cc.length) {
       cc.push(...this.parseDisplay((await this.properties.readString(['0E03'])) ?? ''));
+    }
+    if (!bcc.length) {
       bcc.push(...this.parseDisplay((await this.properties.readString(['0E02'])) ?? ''));
     }
 

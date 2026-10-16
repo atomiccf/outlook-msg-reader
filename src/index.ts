@@ -2,6 +2,7 @@ import { MsgReader } from './msg/MsgReader';
 import type { Msg } from './types';
 import { createScopedMsgReader } from './api/createMsgReader';
 import type { InputSource } from './cfb/InputSource';
+import type { MsgReaderOptions } from './api/options';
 
 /**
  * Simple way to parse an MSG file.
@@ -17,8 +18,8 @@ import type { InputSource } from './cfb/InputSource';
  * @param filePath - Path to the .msg file
  * @returns Parsed message object
  */
-export async function parseMsg(input: InputSource): Promise<Msg> {
-    const reader = await createScopedMsgReader(input);
+export async function parseMsg(input: InputSource, options: MsgReaderOptions = {}): Promise<Msg> {
+    const reader = await createScopedMsgReader(input, options);
     try {
         return await reader.parse();
     } finally {
@@ -40,8 +41,11 @@ export async function parseMsg(input: InputSource): Promise<Msg> {
  * @param filePath - Path to the .msg file
  * @returns MsgReader instance
  */
-export async function createMsgReader(input: InputSource): Promise<MsgReader> {
-    return createScopedMsgReader(input);
+export async function createMsgReader(
+    input: InputSource,
+    options: MsgReaderOptions = {},
+): Promise<MsgReader> {
+    return createScopedMsgReader(input, options);
 }
 
 // Export classes for maximum flexibility
@@ -54,6 +58,10 @@ export type {
     Msg, 
     MsgBody, 
     MsgAttachment,
+    MsgFileAttachment,
+    MsgEmbeddedMessageAttachment,
+    MsgAttachmentInfo,
+    MsgAttachmentStream,
     MsgMetadata,
     MsgImportance,
     MsgRecipient,
@@ -64,4 +72,5 @@ export type {
 } from './types';
 
 export type { SupportedCodePage } from './encoding/decoder';
-export type { InputSource } from './cfb/InputSource';
+export type { InputSource, InputSourceOptions } from './cfb/InputSource';
+export type { MsgReaderOptions } from './api/options';

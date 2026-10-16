@@ -5,13 +5,19 @@ import { DirectoryReader } from './readers/directoryReader';
 import type { HeaderInfo } from '../types';
 import type { Resolver } from '../di/service-locator';
 import { TOKENS } from '../di/tokens';
-import type { InputSource, RandomAccessSource } from './InputSource';
+import type { InputSource, InputSourceOptions, RandomAccessSource } from './InputSource';
 import { InvalidCfbfError } from '../errors/errors';
+import { Readable } from 'node:stream';
+import { Decoder } from '../encoding/decoder';
+import { CodePageReader } from '../mapi/CodePageReader';
+import { PropertyStreamReader } from '../mapi/PropertyStreamReader';
 
 export interface ICFBFReader {
-    load(input: InputSource): Promise<void>;
+    load(input: InputSource, options?: InputSourceOptions): Promise<void>;
     readStream(path: string[]): Promise<Buffer | null>;
     readStreamAsString(path: string[], propertyType?: number): Promise<string | null>;
+    openStream(path: string[]): Promise<Readable | null>;
+    getStreamSize(path: string[]): number | null;
     close(): Promise<void>;
     getTree(): DirectoryNode | null;
     getHeaderInfo(): HeaderInfo;
@@ -20,7 +26,7 @@ export interface ICFBFReader {
 export class CFBFReader implements ICFBFReader {
     private tree: DirectoryNode | null = null;
     private headerInfo!: HeaderInfo;
-    private input!: RandomAccessSource;
+    private input?: RandomAccessSource;
     private readonly headerReader: HeaderReader;
     private readonly fatReader: FATReader;
     private readonly directoryReader: DirectoryReader;
@@ -31,36 +37,42 @@ export class CFBFReader implements ICFBFReader {
         this.directoryReader = directoryReader;
     }
 
-    async load(input: InputSource) {
-        const { header, source } = await this.headerReader.readHeaderWithSource(input);
+    async load(input: InputSource, options: InputSourceOptions = {}) {
+        await this.close();
+        const { header, source } = await this.headerReader.readHeaderWithSource(input, options);
         this.input = source;
 
-        this.headerInfo = {
-            majorVersion: header.readUInt16LE(0x1A) as 3 | 4,
-            minorVersion: header.readUInt16LE(0x18),
-            sectorSize: 1 << header.readUInt16LE(30),
-            miniSectorSize: 1 << header.readUInt16LE(32),
-            numFATSectors: header.readUInt32LE(44),
-            dirSectorLocation: header.readUInt32LE(48),
-            numDirectorySectors: header.readUInt32LE(40),
-            miniStreamCutoffSize: header.readUInt32LE(56),
-            miniFatStartSector: header.readUInt32LE(0x3C),
-            miniFatSectorCount: header.readUInt32LE(0x40),
-            difatStartSector: header.readUInt32LE(0x44),
-            numDIFATSectors: header.readUInt32LE(0x48),
-            fatSectorLocations: Array.from({ length: 109 }, (_, i) => header.readUInt32LE(76 + i * 4)).filter(v => v !== 0xFFFFFFFF),
-            signature: header.subarray(0, 8),
-            rawHeader: header
-        };
+        try {
+            this.headerInfo = {
+                majorVersion: header.readUInt16LE(0x1A) as 3 | 4,
+                minorVersion: header.readUInt16LE(0x18),
+                sectorSize: 1 << header.readUInt16LE(30),
+                miniSectorSize: 1 << header.readUInt16LE(32),
+                numFATSectors: header.readUInt32LE(44),
+                dirSectorLocation: header.readUInt32LE(48),
+                numDirectorySectors: header.readUInt32LE(40),
+                miniStreamCutoffSize: header.readUInt32LE(56),
+                miniFatStartSector: header.readUInt32LE(0x3C),
+                miniFatSectorCount: header.readUInt32LE(0x40),
+                difatStartSector: header.readUInt32LE(0x44),
+                numDIFATSectors: header.readUInt32LE(0x48),
+                fatSectorLocations: Array.from({ length: 109 }, (_, i) => header.readUInt32LE(76 + i * 4)).filter(v => v !== 0xFFFFFFFF),
+                signature: header.subarray(0, 8),
+                rawHeader: header
+            };
 
-        await this.fatReader.buildTable(source, this.headerInfo);
-        await this.directoryReader.loadDirectory(source, this.headerInfo);
+            await this.fatReader.buildTable(source, this.headerInfo);
+            await this.directoryReader.loadDirectory(source, this.headerInfo, options.maxDirectoryDepth);
 
-        this.tree = this.directoryReader.getTree();
+            this.tree = this.directoryReader.getTree();
+        } catch (error) {
+            await this.close();
+            throw error;
+        }
     }
 
     async readStream(path: string[]): Promise<Buffer | null> {
-        if (!this.headerInfo || !this.tree) {
+        if (!this.headerInfo || !this.tree || !this.input) {
             throw new InvalidCfbfError('CFBF is not loaded or its directory tree is empty');
         }
 
@@ -81,12 +93,36 @@ export class CFBFReader implements ICFBFReader {
             case 0x001F: // PT_UNICODE
                 return buffer.toString('utf16le').replace(/\0/g, '');
             case 0x001E: // PT_STRING8
-                return buffer.toString('latin1').replace(/\0/g, '');
+            {
+                const embeddedRootIndex = path.lastIndexOf('__substg1.0_3701000D');
+                const rootName = this.tree?.name ?? 'Root Entry';
+                const storagePath = embeddedRootIndex < 0 ? [] : path.slice(0, embeddedRootIndex + 1);
+                const rootStorage = storagePath[0] === rootName
+                    ? storagePath
+                    : [rootName, ...storagePath];
+                const codepage = await new CodePageReader(
+                    new PropertyStreamReader(this),
+                    rootStorage,
+                ).getCodepage();
+                return new Decoder().decodeBytes(buffer, codepage).replace(/\0/g, '');
+            }
             case 0x0102: // PT_BINARY
                 return buffer.toString('hex');
             default:
                 return buffer.toString();
         }
+    }
+
+    async openStream(path: string[]): Promise<Readable | null> {
+        if (!this.headerInfo || !this.tree || !this.input) {
+            throw new InvalidCfbfError('CFBF is not loaded or its directory tree is empty');
+        }
+        const chunks = await this.directoryReader.readStreamChunksByPath(this.input, this.headerInfo, path);
+        return chunks ? Readable.from(chunks) : null;
+    }
+
+    getStreamSize(path: string[]): number | null {
+        return this.directoryReader.findByPath(path)?.streamSize ?? null;
     }
 
     getTree(): DirectoryNode | null {
@@ -98,7 +134,10 @@ export class CFBFReader implements ICFBFReader {
     }
 
     async close(): Promise<void> {
-        await this.input?.close();
+        const input = this.input;
+        this.input = undefined;
+        this.tree = null;
+        await input?.close();
     }
 }
 

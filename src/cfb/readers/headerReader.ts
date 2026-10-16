@@ -3,7 +3,12 @@ import type * as fs from 'fs';
 import type { Resolver } from '../../di/service-locator';
 import { TOKENS } from '../../di/tokens';
 import { InvalidCfbfError } from '../../errors/errors';
-import { createRandomAccessSource, type InputSource, type RandomAccessSource } from '../InputSource';
+import {
+    createRandomAccessSource,
+    type InputSource,
+    type InputSourceOptions,
+    type RandomAccessSource,
+} from '../InputSource';
 
 
 export class HeaderReader {
@@ -18,8 +23,11 @@ export class HeaderReader {
     /**
      * Reads the header from a file (only the first 512 bytes)
      */
-    async readHeaderWithSource(input: InputSource): Promise<{ header: Buffer; source: RandomAccessSource }> {
-        const source = createRandomAccessSource(input, this.fs);
+    async readHeaderWithSource(
+        input: InputSource,
+        options: InputSourceOptions = {},
+    ): Promise<{ header: Buffer; source: RandomAccessSource }> {
+        const source = createRandomAccessSource(input, this.fs, options);
         try {
             const header = await source.read(0, this.constants.HEADER_SIZE);
 

@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
-import type * as fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
 import { parseMsg } from '../src';
 import { createRandomAccessSource } from '../src/cfb/InputSource';
 import { CFBFConstants } from '../src/constants/cfbf';
@@ -89,5 +89,93 @@ describe('Readable input', () => {
 
     await expect(parseMsg(stream)).rejects.toBe(failure);
     expect(stream.destroyed).toBe(true);
+  });
+
+  it('spills buffered stream data to disk after the memory threshold', async () => {
+    const input = Buffer.from('0123456789abcdef');
+    const source = createRandomAccessSource(Readable.from(chunk(input, 3)), fs, {
+      streamMemoryThreshold: 4,
+    });
+
+    expect((await source.read(10, 4)).toString()).toBe('abcd');
+    expect((await source.read(1, 4)).toString()).toBe('1234');
+    await source.close();
+  });
+
+  it('rejects Readable input beyond the configured size limit', async () => {
+    const source = createRandomAccessSource(Readable.from([Buffer.alloc(9)]), fs, {
+      maxInputBytes: 8,
+    });
+
+    await expect(source.read(0, 9)).rejects.toThrow('exceeds maxInputBytes (8)');
+    await source.close();
+  });
+
+  it('checks trailing Readable bytes even when parsing needs only the beginning', async () => {
+    const input = createEmptyMsg();
+    const stream = Readable.from([input, Buffer.alloc(1)]);
+
+    await expect(parseMsg(stream, { maxInputBytes: input.length }))
+      .rejects.toThrow(`Readable MSG input exceeds maxInputBytes (${input.length})`);
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('accepts a Readable exactly at the configured size limit', async () => {
+    const input = createEmptyMsg();
+
+    await expect(parseMsg(Readable.from([input]), { maxInputBytes: input.length }))
+      .resolves.toEqual(await parseMsg(input));
+  });
+});
+
+describe('Buffer input', () => {
+  it('rejects input beyond the configured size limit before reading it', () => {
+    expect(() => createRandomAccessSource(Buffer.alloc(9), fs, {
+      maxInputBytes: 8,
+    })).toThrow('Buffer MSG input exceeds maxInputBytes (8)');
+  });
+});
+
+describe('File input', () => {
+  it('rejects a file beyond the configured size limit before reading it', async () => {
+    const stat = vi.fn(async () => ({ size: 9 }));
+    const source = createRandomAccessSource(
+      'message.msg',
+      { promises: { stat } } as unknown as typeof fs,
+      { maxInputBytes: 8 },
+    );
+
+    await expect(source.read(0, 1)).rejects.toThrow('File MSG input exceeds maxInputBytes (8)');
+    expect(stat).toHaveBeenCalledWith('message.msg');
+    await source.close();
+  });
+
+  it('keeps one file handle open for the source lifetime', async () => {
+    const input = Buffer.from('0123456789abcdef');
+    const close = vi.fn(async () => undefined);
+    const read = vi.fn(async (
+      target: Buffer,
+      targetOffset: number,
+      length: number,
+      position: number,
+    ) => {
+      const bytesRead = input.copy(target, targetOffset, position, position + length);
+      return { bytesRead, buffer: target };
+    });
+    const open = vi.fn(async () => ({ read, close }));
+    const source = createRandomAccessSource(
+      'message.msg',
+      { promises: { open } } as unknown as typeof fs,
+    );
+
+    expect((await source.read(0, 4)).toString()).toBe('0123');
+    expect((await source.read(8, 4)).toString()).toBe('89ab');
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+
+    await source.close();
+    await source.close();
+    expect(close).toHaveBeenCalledTimes(1);
+    await expect(source.read(0, 1)).rejects.toThrow('closed MSG input');
   });
 });

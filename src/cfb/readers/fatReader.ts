@@ -157,6 +157,20 @@ export class FATReader {
         headerInfo: HeaderInfo,
         expectedSize?: number
     ): Promise<Buffer> {
+        const buffers: Buffer[] = [];
+        for await (const chunk of this.readChainChunks(input, startSector, headerInfo, expectedSize)) {
+            buffers.push(chunk);
+        }
+        return Buffer.concat(buffers);
+    }
+
+    /** Reads a FAT chain one sector at a time without concatenating it in memory. */
+    async *readChainChunks(
+        input: RandomAccessInput,
+        startSector: number,
+        headerInfo: HeaderInfo,
+        expectedSize?: number
+    ): AsyncGenerator<Buffer> {
         if (!this.fatTable || Object.keys(this.fatTable).length === 0) {
             throw new CorruptedSectorChainError('FAT table is empty');
         }
@@ -165,12 +179,14 @@ export class FATReader {
         if (expectedSize !== undefined && (!Number.isSafeInteger(expectedSize) || expectedSize < 0)) {
             throw new CorruptedSectorChainError(`Invalid expected stream size: ${expectedSize}`);
         }
+        if (expectedSize === 0) return;
 
         const visited = new Set<number>();
-        const buffers: Buffer[] = [];
         const expectedSectors = expectedSize === undefined
             ? undefined
             : Math.ceil(expectedSize / headerInfo.sectorSize);
+        let sectorsRead = 0;
+        let remaining = expectedSize;
 
         let sector: number | null = startSector;
         while (sector !== null) {
@@ -180,22 +196,23 @@ export class FATReader {
             visited.add(sector);
 
             const bytes = await this.readSector(input, sector, headerInfo);
-            buffers.push(bytes);
+            sectorsRead += 1;
+            const chunk = remaining === undefined ? bytes : bytes.subarray(0, Math.min(bytes.length, remaining));
+            if (chunk.length > 0) yield chunk;
+            if (remaining !== undefined) remaining -= chunk.length;
 
             const next = this.getNextSector(sector);
-            if (expectedSectors !== undefined && buffers.length === expectedSectors) {
+            if (expectedSectors !== undefined && sectorsRead === expectedSectors) {
                 sector = null;
                 continue;
             }
             if (expectedSectors !== undefined && next === null) {
                 throw new CorruptedSectorChainError(
-                    `FAT chain ended after ${buffers.length} sectors; expected ${expectedSectors}`
+                    `FAT chain ended after ${sectorsRead} sectors; expected ${expectedSectors}`
                 );
             }
             sector = next;
         }
-
-        return Buffer.concat(buffers);
     }
 }
 

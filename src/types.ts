@@ -1,8 +1,27 @@
-export interface MsgAttachment {
+import type { Readable } from 'node:stream';
+
+export interface MsgAttachmentInfo {
+    index: number;
     name: string;
     mime: string;
-    content: Buffer;
+    size: number;
     kind: 'file' | 'embedded-message';
+}
+
+export interface MsgFileAttachment extends MsgAttachmentInfo {
+    kind: 'file';
+    content: Buffer;
+}
+
+export interface MsgEmbeddedMessageAttachment extends MsgAttachmentInfo {
+    kind: 'embedded-message';
+}
+
+export type MsgAttachment = MsgFileAttachment | MsgEmbeddedMessageAttachment;
+
+export interface MsgAttachmentStream extends MsgAttachmentInfo {
+    kind: 'file';
+    content: Readable;
 }
 
 export interface MsgBody {

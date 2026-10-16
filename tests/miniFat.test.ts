@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CFBFConstants } from '../src/constants/cfbf';
 import { FATReader } from '../src/cfb/readers/fatReader';
 import { MiniFATReader } from '../src/cfb/readers/miniFATReader';
@@ -41,12 +41,12 @@ function createInput(fatNext = constants.END_OF_CHAIN): Buffer {
 async function createMiniFAT(
   input: Buffer,
   header = createHeaderInfo(),
-): Promise<MiniFATReader> {
+): Promise<{ miniFat: MiniFATReader; fat: FATReader }> {
   const fat = new FATReader(constants);
   await fat.buildTable(input, header);
   const miniFat = new MiniFATReader(fat, constants);
   await miniFat.buildMiniFAT(input, header);
-  return miniFat;
+  return { miniFat, fat };
 }
 
 describe('MiniFAT validation', () => {
@@ -54,7 +54,7 @@ describe('MiniFAT validation', () => {
     const input = createInput();
     input.writeUInt32LE(1, sectorOffset(1));
     input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(1) + 4);
-    const miniFat = await createMiniFAT(input);
+    const { miniFat } = await createMiniFAT(input);
 
     expect(miniFat.getNextMiniSector(0)).toBe(1);
     expect(miniFat.getNextMiniSector(1)).toBeNull();
@@ -87,7 +87,7 @@ describe('MiniFAT validation', () => {
   it('rejects FREESECT inside a mini-sector chain', async () => {
     const input = createInput();
     input.writeUInt32LE(constants.FREE_SECTOR, sectorOffset(1));
-    const miniFat = await createMiniFAT(input);
+    const { miniFat } = await createMiniFAT(input);
 
     expect(() => miniFat.getNextMiniSector(0)).toThrow(
       'MiniFAT chain points to a free sector after sector 0',
@@ -96,18 +96,39 @@ describe('MiniFAT validation', () => {
 });
 
 describe('mini stream validation', () => {
+  it('reads only the root FAT sector containing the requested mini-sector', async () => {
+    const input = createInput();
+    input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(1));
+    input.fill(0x33, sectorOffset(2), sectorOffset(2) + 64);
+    const { miniFat, fat } = await createMiniFAT(input);
+    const read = vi.fn(async (offset: number, length: number) => input.subarray(offset, offset + length));
+    const reader = new MiniStreamReader(miniFat, fat);
+    await reader.loadMiniStream({ read, close: async () => undefined }, createHeaderInfo(), {
+      startingSectorLocation: 2,
+      streamSize: sectorSize * 100,
+    });
+
+    const result = await reader.readMiniStream({ startingSectorLocation: 0, streamSize: 64 });
+
+    expect(result).toEqual(Buffer.alloc(64, 0x33));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(sectorOffset(2), sectorSize);
+  });
+
   it('reads a fragmented mini-sector chain', async () => {
     const input = createInput();
     input.writeUInt32LE(1, sectorOffset(1));
     input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(1) + 4);
-    const miniFat = await createMiniFAT(input);
-    const reader = new MiniStreamReader(miniFat);
-    const rootStream = Buffer.alloc(128);
-    rootStream.fill(0x11, 0, 64);
-    rootStream.fill(0x22, 64, 128);
-    await reader.loadMiniStream(rootStream, 64);
+    const { miniFat, fat } = await createMiniFAT(input);
+    const reader = new MiniStreamReader(miniFat, fat);
+    input.fill(0x11, sectorOffset(2), sectorOffset(2) + 64);
+    input.fill(0x22, sectorOffset(2) + 64, sectorOffset(2) + 128);
+    await reader.loadMiniStream(input, createHeaderInfo(), {
+      startingSectorLocation: 2,
+      streamSize: 128,
+    });
 
-    const result = reader.readMiniStream({ startingSectorLocation: 0, streamSize: 128 });
+    const result = await reader.readMiniStream({ startingSectorLocation: 0, streamSize: 128 });
 
     expect(result[0]).toBe(0x11);
     expect(result[64]).toBe(0x22);
@@ -117,11 +138,14 @@ describe('mini stream validation', () => {
     const input = createInput();
     input.writeUInt32LE(2, sectorOffset(1));
     input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(1) + 8);
-    const miniFat = await createMiniFAT(input);
-    const reader = new MiniStreamReader(miniFat);
-    await reader.loadMiniStream(Buffer.alloc(64), 64);
+    const { miniFat, fat } = await createMiniFAT(input);
+    const reader = new MiniStreamReader(miniFat, fat);
+    await reader.loadMiniStream(input, createHeaderInfo(), {
+      startingSectorLocation: 2,
+      streamSize: 64,
+    });
 
-    expect(() => reader.readMiniStream({ startingSectorLocation: 0, streamSize: 128 })).toThrow(
+    await expect(reader.readMiniStream({ startingSectorLocation: 0, streamSize: 128 })).rejects.toThrow(
       'Mini stream sector 2 exceeds the root mini stream bounds',
     );
   });
@@ -129,11 +153,14 @@ describe('mini stream validation', () => {
   it('rejects a mini-sector chain that ends before the stream size', async () => {
     const input = createInput();
     input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(1));
-    const miniFat = await createMiniFAT(input);
-    const reader = new MiniStreamReader(miniFat);
-    await reader.loadMiniStream(Buffer.alloc(128), 64);
+    const { miniFat, fat } = await createMiniFAT(input);
+    const reader = new MiniStreamReader(miniFat, fat);
+    await reader.loadMiniStream(input, createHeaderInfo(), {
+      startingSectorLocation: 2,
+      streamSize: 128,
+    });
 
-    expect(() => reader.readMiniStream({ startingSectorLocation: 0, streamSize: 128 })).toThrow(
+    await expect(reader.readMiniStream({ startingSectorLocation: 0, streamSize: 128 })).rejects.toThrow(
       'MiniFAT chain ended after 64 bytes; expected 128',
     );
   });
@@ -142,11 +169,14 @@ describe('mini stream validation', () => {
     const input = createInput();
     input.writeUInt32LE(1, sectorOffset(1));
     input.writeUInt32LE(0, sectorOffset(1) + 4);
-    const miniFat = await createMiniFAT(input);
-    const reader = new MiniStreamReader(miniFat);
-    await reader.loadMiniStream(Buffer.alloc(192), 64);
+    const { miniFat, fat } = await createMiniFAT(input);
+    const reader = new MiniStreamReader(miniFat, fat);
+    await reader.loadMiniStream(input, createHeaderInfo(), {
+      startingSectorLocation: 2,
+      streamSize: 192,
+    });
 
-    expect(() => reader.readMiniStream({ startingSectorLocation: 0, streamSize: 192 })).toThrow(
+    await expect(reader.readMiniStream({ startingSectorLocation: 0, streamSize: 192 })).rejects.toThrow(
       'MiniFAT sector chain loop detected',
     );
   });

@@ -1,5 +1,6 @@
 import type { SupportedCodePage } from '../encoding/decoder';
-import type { PropertyStreamReader } from '../mapi/PropertyStreamReader';
+import { UnsupportedMsgFeatureError } from '../errors/errors';
+import type { PropertyStreamReader } from './PropertyStreamReader';
 
 /**
  * Reader for determining message codepage from MSG file properties.
@@ -8,7 +9,10 @@ import type { PropertyStreamReader } from '../mapi/PropertyStreamReader';
 export class CodePageReader {
     private cachedCodepage: SupportedCodePage | null = null;
 
-    constructor(private readonly propertyStream: PropertyStreamReader) {}
+    constructor(
+        private readonly propertyStream: PropertyStreamReader,
+        private readonly rootStorage: string[] = ['Root Entry'],
+    ) {}
 
     /**
      * Gets the codepage used in the MSG file.
@@ -20,15 +24,14 @@ export class CodePageReader {
             return this.cachedCodepage;
         }
 
-        const codepageValue = await this.propertyStream.readNumber(['Root Entry'], ['3FFD', '3FDE']);
+        const codepageValue = await this.propertyStream.readNumber(this.rootStorage, ['3FFD', '3FDE']);
 
         if (codepageValue !== undefined) {
-            // Validate that it's a supported codepage, fallback to 1252 if not
             const supportedCodepages: SupportedCodePage[] = [65001, 1250, 1251, 1252, 1253, 1254, 1255, 1256, 1257, 1258];
             if (supportedCodepages.includes(codepageValue as SupportedCodePage)) {
                 this.cachedCodepage = codepageValue as SupportedCodePage;
             } else {
-                this.cachedCodepage = 1252; // Default to Windows-1252
+                throw new UnsupportedMsgFeatureError(`Unsupported MSG code page: ${codepageValue}`);
             }
         } else {
             // Default codepage if neither fixed property is available

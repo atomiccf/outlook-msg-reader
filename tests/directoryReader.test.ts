@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CFBFConstants } from '../src/constants/cfbf';
 import { DirectoryReader } from '../src/cfb/readers/directoryReader';
 import type { FATReader } from '../src/cfb/readers/fatReader';
 import type { MiniFATReader } from '../src/cfb/readers/miniFATReader';
 import type { MiniStreamReader } from '../src/cfb/readers/miniStreamReader';
+import type { RandomAccessSource } from '../src/cfb/InputSource';
 import { DirectoryEntryType, type HeaderInfo } from '../src/types';
 
 const constants = new CFBFConstants();
@@ -80,6 +81,59 @@ function version3Header(): HeaderInfo {
 }
 
 describe('CFBF directory validation', () => {
+  it('initializes the MiniFAT once for concurrent mini-stream reads', async () => {
+    const buffer = createDirectory();
+    buffer.writeBigUInt64LE(4n, 128 + 0x78);
+    buffer.writeBigUInt64LE(4n, 256 + 0x78);
+    let finishInitialization!: () => void;
+    const initialization = new Promise<void>((resolve) => { finishInitialization = resolve; });
+    const buildMiniFAT = vi.fn(async () => { await initialization; });
+    const loadMiniStream = vi.fn(async () => undefined);
+    const readMiniStream = vi.fn(async () => Buffer.from('data'));
+    const reader = new DirectoryReader(
+      {} as FATReader,
+      { buildMiniFAT } as unknown as MiniFATReader,
+      { loadMiniStream, readMiniStream } as unknown as MiniStreamReader,
+      constants,
+    );
+    const header = version3Header();
+    reader.parseDirectoryEntries(buffer, header);
+    reader.buildDirectoryTree();
+    const input = {} as RandomAccessSource;
+
+    const first = reader.readStreamByPath(input, header, ['Root Entry', 'first']);
+    const second = reader.readStreamByPath(input, header, ['Root Entry', 'second']);
+    expect(buildMiniFAT).toHaveBeenCalledTimes(1);
+    finishInitialization();
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      Buffer.from('data'),
+      Buffer.from('data'),
+    ]);
+    expect(loadMiniStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries MiniFAT initialization after a failure', async () => {
+    const buildMiniFAT = vi.fn()
+      .mockRejectedValueOnce(new Error('initialization failed'))
+      .mockResolvedValueOnce(undefined);
+    const loadMiniStream = vi.fn(async () => undefined);
+    const reader = new DirectoryReader(
+      {} as FATReader,
+      { buildMiniFAT } as unknown as MiniFATReader,
+      { loadMiniStream } as unknown as MiniStreamReader,
+      constants,
+    );
+    const header = version3Header();
+    reader.parseDirectoryEntries(createDirectory(), header);
+    reader.buildDirectoryTree();
+    const input = {} as RandomAccessSource;
+
+    await expect(reader.initializeMiniStream(input, header)).rejects.toThrow('initialization failed');
+    await expect(reader.initializeMiniStream(input, header)).resolves.toBeUndefined();
+    expect(buildMiniFAT).toHaveBeenCalledTimes(2);
+    expect(loadMiniStream).toHaveBeenCalledTimes(1);
+  });
+
   it('builds a tree from valid directory entries', () => {
     const reader = createReader();
     reader.parseDirectoryEntries(createDirectory(), version3Header());
@@ -138,6 +192,35 @@ describe('CFBF directory validation', () => {
 
     expect(() => createReader().parseDirectoryEntries(buffer, version3Header())).toThrow(
       'Version 3 directory entry SID 1 has a stream size larger than 32 bits',
+    );
+  });
+
+  it('rejects directory nesting beyond the configured depth', () => {
+    const buffer = Buffer.alloc(4 * 128);
+    writeEntry(buffer, 0, {
+      name: 'Root Entry',
+      type: DirectoryEntryType.Root,
+      child: 1,
+    });
+    writeEntry(buffer, 1, {
+      name: 'level-1',
+      type: DirectoryEntryType.Storage,
+      child: 2,
+    });
+    writeEntry(buffer, 2, {
+      name: 'level-2',
+      type: DirectoryEntryType.Storage,
+      child: 3,
+    });
+    writeEntry(buffer, 3, {
+      name: 'level-3',
+      type: DirectoryEntryType.Stream,
+    });
+    const reader = createReader();
+    reader.parseDirectoryEntries(buffer, version3Header());
+
+    expect(() => reader.buildDirectoryTree(2)).toThrow(
+      'Directory depth exceeds maxDirectoryDepth (2)',
     );
   });
 });

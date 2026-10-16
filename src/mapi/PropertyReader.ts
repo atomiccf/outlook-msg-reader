@@ -44,7 +44,7 @@ export class PropertyReader {
 
         // Для ANSI всегда использовать кодовую страницу
         const codepage = await this.codePageReader.getCodepage();
-        const result = this.decoder.decodeBytes(buf, codepage).replace(/\u0000+$/g, '').trim();
+        const result = this.decoder.decodeBytes(buf, codepage).replace(/\u0000+$/g, '');
         return result || undefined;
     }
 

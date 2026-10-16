@@ -118,6 +118,24 @@ describe('FAT sector chains', () => {
     expect(chain).not.toContain(0x22);
   });
 
+  it('streams sectors and trims the final chunk to the declared size', async () => {
+    const input = createInput();
+    input.writeUInt32LE(2, sectorOffset(0) + 4);
+    input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(0) + 8);
+    input.fill(0x11, sectorOffset(1), sectorOffset(1) + sectorSize);
+    input.fill(0x22, sectorOffset(2), sectorOffset(2) + sectorSize);
+    const { reader, header } = await createReader(input);
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of reader.readChainChunks(input, 1, header, sectorSize + 7)) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.map((chunk) => chunk.length)).toEqual([sectorSize, 7]);
+    expect(chunks[0][0]).toBe(0x11);
+    expect(chunks[1][0]).toBe(0x22);
+  });
+
   it('rejects a chain loop', async () => {
     const input = createInput();
     input.writeUInt32LE(2, sectorOffset(0) + 4);

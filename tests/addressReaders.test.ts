@@ -15,6 +15,7 @@ describe('address readers', () => {
         if (ids[0] === '39FE') return 'chris.wilson@example.test';
         return undefined;
       }),
+      readString: vi.fn(async () => undefined),
     } as unknown as PropertyStore;
     const propertyStream = {
       readNumber: vi.fn(async () => 1),
@@ -32,6 +33,42 @@ describe('address readers', () => {
     }]);
     expect(properties.readStringAt).toHaveBeenCalledWith(storagePath, ['3001', '39FF']);
     expect(properties.readStringAt).toHaveBeenCalledWith(storagePath, ['39FE', '3003', '0C1F']);
+  });
+
+  it('restores missing Cc and Bcc recipients when To entries exist', async () => {
+    const storagePath = ['Root Entry', '__recip_version1.0_#00000000'];
+    const readString = vi.fn(async (ids: string[]) => {
+      if (ids[0] === '0E03') return 'Copy <copy@example.test>';
+      if (ids[0] === '0E02') return 'hidden@example.test';
+      return undefined;
+    });
+    const properties = {
+      findStorages: () => [storagePath],
+      readStringAt: vi.fn(async (_path: string[], ids: string[]) => {
+        if (ids[0] === '3001') return 'Primary';
+        if (ids[0] === '39FE') return 'primary@example.test';
+        return undefined;
+      }),
+      readString,
+    } as unknown as PropertyStore;
+    const propertyStream = {
+      readNumber: vi.fn(async () => 1),
+    } as unknown as PropertyStreamReader;
+
+    const result = await new RecipientReader(
+      properties,
+      propertyStream,
+      { warn: vi.fn() } as unknown as Logger,
+    ).read();
+
+    expect(result).toEqual({
+      to: [{ name: 'Primary', email: 'primary@example.test' }],
+      cc: [{ name: 'Copy', email: 'copy@example.test' }],
+      bcc: [{ name: '', email: 'hidden@example.test' }],
+    });
+    expect(readString).not.toHaveBeenCalledWith(['0E04']);
+    expect(readString).toHaveBeenCalledWith(['0E03']);
+    expect(readString).toHaveBeenCalledWith(['0E02']);
   });
 
   it('prefers the sender SMTP property over an Exchange Legacy DN', async () => {

@@ -2,11 +2,18 @@ import type { Logger } from '../logging/Logger';
 import type { PropertyStore } from '../mapi/PropertyStore';
 import type { MsgBody } from '../types';
 import { decompressRtf } from '../rtf/decompressRtf';
+import type { Decoder } from '../encoding/decoder';
+import type { CodePageReader } from '../mapi/CodePageReader';
 
 export class BodyReader {
-  constructor(private readonly properties: PropertyStore, private readonly logger: Logger) {}
+  constructor(
+    private readonly properties: PropertyStore,
+    private readonly logger: Logger,
+    private readonly decoder: Decoder,
+    private readonly codePageReader: CodePageReader,
+  ) {}
 
-  async read(): Promise<MsgBody> {
+  async read(maxRtfBytes?: number): Promise<MsgBody> {
     const body: MsgBody = {};
     const primary = await this.properties.readString(['1000']);
     const fallback = primary && this.isBody(primary) ? primary : await this.properties.readString(['8010']);
@@ -16,7 +23,7 @@ export class BodyReader {
     if (typeof html === 'string') body.html = html;
     if (Buffer.isBuffer(html)) {
       try {
-        body.html = this.decodeHtml(html);
+        body.html = await this.decodeHtml(html);
       } catch (error) {
         this.logger.warn('Unable to decode HTML body', error);
       }
@@ -26,15 +33,16 @@ export class BodyReader {
     const rtf = await this.properties.read(['1009'], { preferBinary: true });
     if (Buffer.isBuffer(rtf) && rtf.length) {
       try {
-        body.rtf = decompressRtf(rtf);
+        body.rtf = decompressRtf(rtf, maxRtfBytes);
       } catch (error) {
+        if (error instanceof RangeError) throw error;
         this.logger.warn('Unable to decompress RTF body', error);
       }
     }
     return body;
   }
 
-  private decodeHtml(value: Buffer): string {
+  private async decodeHtml(value: Buffer): Promise<string> {
     if (value.length >= 2 && value[0] === 0xff && value[1] === 0xfe) {
       return value.subarray(2).toString('utf16le').replace(/\u0000+$/g, '');
     }
@@ -46,10 +54,14 @@ export class BodyReader {
       }
       return converted.toString('utf16le').replace(/\u0000+$/g, '');
     }
+    if (value.length >= 3 && value[0] === 0xef && value[1] === 0xbb && value[2] === 0xbf) {
+      return value.subarray(3).toString('utf8').replace(/\u0000+$/g, '');
+    }
     if (this.isLikelyUtf16Le(value)) {
       return value.toString('utf16le').replace(/\u0000+$/g, '');
     }
-    return value.toString('utf8').replace(/\u0000+$/g, '');
+    const codepage = await this.codePageReader.getCodepage();
+    return this.decoder.decodeBytes(value, codepage).replace(/\u0000+$/g, '');
   }
 
   private isLikelyUtf16Le(value: Buffer): boolean {
@@ -72,7 +84,11 @@ export class BodyReader {
         const value = code[0].toLowerCase() === 'x'
           ? Number.parseInt(code.slice(1), 16)
           : Number.parseInt(code, 10);
-        return Number.isFinite(value) ? String.fromCodePoint(value) : '';
+        const isUnicodeScalar = Number.isFinite(value)
+          && value > 0
+          && value <= 0x10ffff
+          && (value < 0xd800 || value > 0xdfff);
+        return isUnicodeScalar ? String.fromCodePoint(value) : '\ufffd';
       })
       .replace(/&(nbsp|amp|lt|gt|quot|apos);/gi, (_match, entity: string) => ({
         nbsp: ' ',
@@ -93,7 +109,7 @@ export class BodyReader {
 
   private isBody(value: string): boolean {
     const text = value.trim();
-    if (text.length < 3) return false;
+    if (!text) return false;
     return !(text.startsWith('<') && text.endsWith('>') && text.includes('@') && text.length < 200);
   }
 }

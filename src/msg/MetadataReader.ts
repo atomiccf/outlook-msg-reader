@@ -2,8 +2,6 @@ import type { PropertyStore } from '../mapi/PropertyStore';
 import type { PropertyStreamReader } from '../mapi/PropertyStreamReader';
 import type { MsgImportance, MsgMetadata } from '../types';
 
-const ROOT_STORAGE = ['Root Entry'];
-
 export class MetadataReader {
   constructor(
     private readonly properties: PropertyStore,
@@ -11,12 +9,13 @@ export class MetadataReader {
   ) {}
 
   async read(): Promise<MsgMetadata> {
+    const rootStorage = this.properties.getRootStorage?.() ?? ['Root Entry'];
     const [messageId, transportHeaders, sentAt, receivedAt, importanceValue] = await Promise.all([
-      this.properties.readStringAt(ROOT_STORAGE, ['1035']),
-      this.properties.readStringAt(ROOT_STORAGE, ['007D']),
-      this.propertyStream.read(ROOT_STORAGE, ['0039']),
-      this.propertyStream.read(ROOT_STORAGE, ['0E06']),
-      this.propertyStream.readNumber(ROOT_STORAGE, ['0017']),
+      this.properties.readStringAt(rootStorage, ['1035']),
+      this.properties.readStringAt(rootStorage, ['007D']),
+      this.propertyStream.read(rootStorage, ['0039']),
+      this.propertyStream.read(rootStorage, ['0E06']),
+      this.propertyStream.readNumber(rootStorage, ['0017']),
     ]);
 
     return {
