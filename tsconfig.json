@@ -11,5 +11,6 @@
   "skipLibCheck": true,
   "sourceMap": true
  },
- "include": ["src", "test"]
+ "include": ["src", "tests"],
+ "exclude": ["dist", "node_modules"]
 }

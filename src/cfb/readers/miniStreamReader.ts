@@ -1,5 +1,6 @@
-import { container } from '../../di/container';
 import { MiniFATReader } from './miniFATReader';
+import type { Resolver } from '../../di/service-locator';
+import { TOKENS } from '../../di/tokens';
 
 
 /**
@@ -67,28 +68,10 @@ export class MiniStreamReader {
 
         return out;
     }
-    // readMiniStream(entry: { startingSectorLocation: number, streamSize: number }): Buffer {
-    //     console.log(`[readMiniStream] Reading entry:`, entry);
-    //     console.log(`[readMiniStream] miniStreamBuffer size: ${this.miniStreamBuffer.length}, miniSectorSize: ${this.miniSectorSize}`);
-    //     const result = Buffer.alloc(entry.streamSize);
-    //     let miniSector: number | null = entry.startingSectorLocation;
-    //     let offset = 0;
-    //
-    //     while (miniSector !== null) {
-    //         const srcOffset = miniSector * this.miniSectorSize;
-    //         const slice = this.miniStreamBuffer.subarray(srcOffset, srcOffset + this.miniSectorSize);
-    //
-    //         slice.copy(result, offset);
-    //         offset += slice.length;
-    //
-    //         miniSector = this.miniFATReader.getNextMiniSector(miniSector);
-    //     }
-    //     return result.subarray(0, entry.streamSize);
-    // }
 }
 
 
-export function MiniStreamReaderFactory(): MiniStreamReader {
-    const miniFAT = container.get<MiniFATReader>('miniFATReader');
+export function MiniStreamReaderFactory(resolver: Resolver): MiniStreamReader {
+    const miniFAT = resolver.get(TOKENS.miniFATReader);
     return new MiniStreamReader(miniFAT);
 }

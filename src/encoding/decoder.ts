@@ -11,9 +11,9 @@ import {
 } from "./index";
 
 export type SupportedCodePage =
-    | 1250 | 1251 | 1252 | 1253 | 1254 | 1255 | 1256 | 1257 | 1258;
+    | 65001 | 1250 | 1251 | 1252 | 1253 | 1254 | 1255 | 1256 | 1257 | 1258;
 
-const TABLES: Record<SupportedCodePage, string[]> = {
+const TABLES: Partial<Record<SupportedCodePage, string[]>> = {
     1250: CP1250,
     1251: CP1251,
     1252: CP1252,
@@ -27,6 +27,7 @@ const TABLES: Record<SupportedCodePage, string[]> = {
 
 export class Decoder {
      decodeBytes(bytes: Uint8Array, codepage: SupportedCodePage): string {
+        if (codepage === 65001) return Buffer.from(bytes).toString('utf8');
         const table = TABLES[codepage];
         if (!table) throw new Error(`Unknown code page: ${codepage}`);
 
@@ -50,7 +51,7 @@ export class Decoder {
             if (encoding === 'B') {
                 buf = Buffer.from(text, 'base64');
             } else if (encoding === 'Q') {
-                const qp = text.replace(/_/g, ' ').replace(/=([A-Fa-f0-9]{2})/g, (_:any, hex:string) =>
+                const qp = text.replace(/_/g, ' ').replace(/=([A-Fa-f0-9]{2})/g, (_match: string, hex: string) =>
                     String.fromCharCode(parseInt(hex, 16))
                 );
                 buf = Buffer.from(qp, 'binary');

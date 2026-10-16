@@ -1,6 +1,10 @@
 node_modules
 dist
 .idea
+.tools
+**/bin
+**/obj
+tests/fixtures/report.html
 sample
 index.js
 run.js

@@ -1,7 +1,10 @@
-import { container } from '../../di/container';
 import { CFBFConstants } from '../../constants/cfbf';
 import type * as fs from 'fs';
 import { Readable } from 'stream';
+import type { Resolver } from '../../di/service-locator';
+import { TOKENS } from '../../di/tokens';
+import { InvalidCfbfError } from '../../errors/errors';
+import type { InputSource } from '../InputSource';
 
 
 export class HeaderReader {
@@ -16,12 +19,15 @@ export class HeaderReader {
     /**
      * Reads the header from a file (only the first 512 bytes)
      */
-    async readHeaderWithStream(input: string): Promise<{ header: Buffer; stream: Readable }> {
+    async readHeaderWithStream(input: InputSource): Promise<{ header: Buffer; stream: Readable }> {
         const stream = this.#convertInputToStream(input);
         const header = await this.#readHeaderBytes(stream, this.constants.HEADER_SIZE);
 
+        if (header.length < this.constants.HEADER_SIZE) {
+            throw new InvalidCfbfError('CFBF header is incomplete');
+        }
         if (!this.#validateSignatures(header)) {
-            throw new Error('Invalid file signature');
+            throw new InvalidCfbfError('Invalid CFBF file signature');
         }
 
         return { header, stream };
@@ -80,8 +86,8 @@ export class HeaderReader {
     /**
      * Converts a file path into a ReadStream (reads only the first 512 bytes)
      */
-    #convertInputToStream(input: string): fs.ReadStream {
-
+    #convertInputToStream(input: InputSource): Readable {
+        if (Buffer.isBuffer(input)) return Readable.from([input]);
 
         if (!this.fs?.createReadStream) {
             throw new Error('FS module not available');
@@ -101,8 +107,8 @@ export class HeaderReader {
 /**
  * Factory function to create HeaderReader with dependencies from the DI container
  */
-export function HeaderReaderFactory(): HeaderReader {
-    const constants = container.get<CFBFConstants>("cfbfConstants");
-    const fsModule = container.get<typeof fs>('fs');
+export function HeaderReaderFactory(resolver: Resolver): HeaderReader {
+    const constants = resolver.get(TOKENS.cfbfConstants);
+    const fsModule = resolver.get(TOKENS.fs);
     return new HeaderReader(constants, fsModule);
 }

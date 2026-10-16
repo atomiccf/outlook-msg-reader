@@ -1,8 +1,11 @@
 import { Readable } from 'stream';
 import { HeaderInfo } from "../../types";
-import { container } from '../../di/container';
 import type * as fs from "fs";
 import { parseUint32Array } from "../../utils/utils";
+import type { Resolver } from '../../di/service-locator';
+import { TOKENS } from '../../di/tokens';
+import { CorruptedSectorChainError } from '../../errors/errors';
+import type { InputSource } from '../InputSource';
 
 export class FATReader {
     private fatTable: Record<number, number> = {};
@@ -12,14 +15,18 @@ export class FATReader {
         this.fs = fsModule;
     }
 
-    async buildTable(input: string | Readable, headerInfo: HeaderInfo) {
-        for (const sectorIndex of headerInfo.fatSectorLocations) {
+    async buildTable(input: InputSource | Readable, headerInfo: HeaderInfo) {
+        this.fatTable = {};
+        for (let fatSectorOrdinal = 0; fatSectorOrdinal < headerInfo.fatSectorLocations.length; fatSectorOrdinal++) {
+            const sectorIndex = headerInfo.fatSectorLocations[fatSectorOrdinal];
             const sectorBytes = await this.readSector(input, sectorIndex, headerInfo);
             const entries = parseUint32Array(sectorBytes);
 
-
             for (let i = 0; i < entries.length; i++) {
-                const actualIndex = sectorIndex * (headerInfo.sectorSize / 4) + i;
+                // A FAT sector describes a consecutive range of sectors according
+                // to its position in DIFAT. Its own physical sector number only
+                // tells us where to read the FAT sector from.
+                const actualIndex = fatSectorOrdinal * entries.length + i;
                 this.fatTable[actualIndex] = entries[i];
             }
         }
@@ -27,12 +34,16 @@ export class FATReader {
         return this.fatTable;
     }
 
-    async readSector(input: string | Readable, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
+    async readSector(input: InputSource | Readable, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
 
         if (!Number.isInteger(sectorIndex) || sectorIndex < 0) {
-            throw new Error(`Invalid sector index: ${sectorIndex}`);
+            throw new CorruptedSectorChainError(`Invalid sector index: ${sectorIndex}`);
         }
         const offset = (sectorIndex + 1) * headerInfo.sectorSize;
+
+        if (Buffer.isBuffer(input)) {
+            return input.subarray(offset, offset + headerInfo.sectorSize);
+        }
 
         let stream: Readable;
         if (typeof input === 'string') {
@@ -60,9 +71,9 @@ export class FATReader {
      * returns a concatenated buffer of all sectors in the chain.
      * Requires buildTable() to be called beforehand.
      */
-    async readChain(input: string | Readable, startSector: number, headerInfo: HeaderInfo): Promise<Buffer> {
+    async readChain(input: InputSource | Readable, startSector: number, headerInfo: HeaderInfo): Promise<Buffer> {
         if (!this.fatTable || Object.keys(this.fatTable).length === 0) {
-            throw new Error('FAT table is empty. Call buildTable() before readChain.');
+            throw new CorruptedSectorChainError('FAT table is empty');
         }
 
         const visited = new Set<number>();
@@ -71,7 +82,7 @@ export class FATReader {
         let sector: number | null = startSector;
         while (sector !== null) {
             if (visited.has(sector)) {
-                throw new Error('FAT sector chain loop detected');
+                throw new CorruptedSectorChainError('FAT sector chain loop detected');
             }
             visited.add(sector);
 
@@ -105,7 +116,7 @@ export class FATReader {
     }
 }
 
-export function FATReaderFactory(): FATReader {
-    const fsModule = container.get<typeof fs>('fs');
+export function FATReaderFactory(resolver: Resolver): FATReader {
+    const fsModule = resolver.get(TOKENS.fs);
     return new FATReader(fsModule);
 }

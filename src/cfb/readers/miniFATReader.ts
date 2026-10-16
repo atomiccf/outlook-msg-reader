@@ -1,9 +1,12 @@
 import { Readable } from 'stream';
 import { HeaderInfo } from "../../types";
-import { container } from '../../di/container';
 import { FATReader } from './fatReader';
 import { parseUint32Array } from "../../utils/utils";
 import { CFBFConstants } from "../../constants/cfbf";
+import type { Resolver } from '../../di/service-locator';
+import { TOKENS } from '../../di/tokens';
+import { CorruptedSectorChainError } from '../../errors/errors';
+import type { InputSource } from '../InputSource';
 
 export class MiniFATReader {
     private miniFAT: number[] = [];
@@ -20,7 +23,7 @@ export class MiniFATReader {
      * Builds the miniFAT by reading all sectors from the FAT chain
      * headerInfo.miniFatStartSector must point to the first sector of the miniFAT (or null/undefined if none)
      */
-    async buildMiniFAT(input: string | Readable, headerInfo: HeaderInfo) {
+    async buildMiniFAT(input: InputSource | Readable, headerInfo: HeaderInfo) {
         this.miniFAT = [];
 
         let sector:number | null = headerInfo.miniFatStartSector;
@@ -38,7 +41,7 @@ export class MiniFATReader {
 
         while (sector !== null && remaining-- > 0) {
             if (visited.has(sector)) {
-                throw new Error('MiniFAT sector chain loop detected');
+                throw new CorruptedSectorChainError('MiniFAT sector chain loop detected');
             }
             visited.add(sector);
 
@@ -86,8 +89,8 @@ export class MiniFATReader {
     }
 }
 
-export function MiniFATReaderFactory(): MiniFATReader {
-    const fatReader = container.get<FATReader>('fatReader');
-    const cfbConstants = container.get<CFBFConstants>('cfbfConstants');
+export function MiniFATReaderFactory(resolver: Resolver): MiniFATReader {
+    const fatReader = resolver.get(TOKENS.fatReader);
+    const cfbConstants = resolver.get(TOKENS.cfbfConstants);
     return new MiniFATReader(fatReader,cfbConstants);
 }

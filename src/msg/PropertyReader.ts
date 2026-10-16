@@ -1,6 +1,7 @@
-import type { CFBFReader } from "../сfb/CFBReader";
+import type { CFBFReader } from "../cfb/CFBReader";
 import type { Decoder } from '../encoding/decoder';
 import type { CodePageReader } from './CodePageReader';
+import { PropertyDecodeError } from '../errors/errors';
 
 /**
  * Reader for MSG file properties.
@@ -20,8 +21,7 @@ export class PropertyReader {
         const name = path[path.length - 1];
         const match = name.match(/_(\w{4})(\w{4})$/);
         if (!match) return undefined;
-        const [, _pid, type] = match;
-        return type.toUpperCase();
+        return match[2].toUpperCase();
     }
 
     /**
@@ -92,8 +92,8 @@ export class PropertyReader {
             // Fallback to UTF-16LE (common in MSG files)
             const utf16Result = buf.toString('utf16le').replace(/\u0000+$/g, '').trim();
             return utf16Result || undefined;
-        } catch {
-            return undefined;
+        } catch (error) {
+            throw new PropertyDecodeError(`Unable to decode property at ${path.join(' / ')}`, error);
         }
     }
 

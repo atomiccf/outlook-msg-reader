@@ -1,12 +1,15 @@
 import type { DirectoryNode } from '../types';
-import { container } from '../di/container';
 import type { HeaderReader } from './readers/headerReader';
 import type { FATReader } from './readers/fatReader';
 import { DirectoryReader } from './readers/directoryReader';
 import type { HeaderInfo } from '../types';
+import type { Resolver } from '../di/service-locator';
+import { TOKENS } from '../di/tokens';
+import type { InputSource } from './InputSource';
+import { InvalidCfbfError } from '../errors/errors';
 
 export interface ICFBFReader {
-    load(filePath: string): Promise<void>;
+    load(input: InputSource): Promise<void>;
     readStream(path: string[]): Promise<Buffer | null>;
     readStreamAsString(path: string[], propertyType?: number): Promise<string | null>;
     getTree(): DirectoryNode | null;
@@ -16,7 +19,7 @@ export interface ICFBFReader {
 export class CFBFReader implements ICFBFReader {
     private tree: DirectoryNode | null = null;
     private headerInfo!: HeaderInfo;
-    private filePath!: string;
+    private input!: InputSource;
     private readonly headerReader: HeaderReader;
     private readonly fatReader: FATReader;
     private readonly directoryReader: DirectoryReader;
@@ -27,10 +30,10 @@ export class CFBFReader implements ICFBFReader {
         this.directoryReader = directoryReader;
     }
 
-    async load(filePath: string) {
-        this.filePath = filePath;
+    async load(input: InputSource) {
+        this.input = input;
 
-        const { header } = await this.headerReader.readHeaderWithStream(filePath);
+        const { header } = await this.headerReader.readHeaderWithStream(input);
 
         this.headerInfo = {
             sectorSize: 1 << header.readUInt16LE(30),
@@ -46,19 +49,19 @@ export class CFBFReader implements ICFBFReader {
             rawHeader: header
         };
 
-        await this.fatReader.buildTable(filePath, this.headerInfo);
-        await this.directoryReader.loadDirectory(filePath, this.headerInfo);
+        await this.fatReader.buildTable(input, this.headerInfo);
+        await this.directoryReader.loadDirectory(input, this.headerInfo);
 
         this.tree = this.directoryReader.getTree();
     }
 
     async readStream(path: string[]): Promise<Buffer | null> {
         if (!this.headerInfo || !this.tree) {
-            throw new Error('CFBF not loaded or directory tree is empty');
+            throw new InvalidCfbfError('CFBF is not loaded or its directory tree is empty');
         }
 
         return this.directoryReader.readStreamByPath(
-            this.filePath,
+            this.input,
             this.headerInfo,
             path
         );
@@ -91,9 +94,9 @@ export class CFBFReader implements ICFBFReader {
     }
 }
 
-export function CFBFReaderFactory(): CFBFReader {
-    const headerReader = container.get<HeaderReader>('headerReader');
-    const fatReader = container.get<FATReader>('fatReader');
-    const directoryReader = container.get<DirectoryReader>('directoryReader');
+export function CFBFReaderFactory(resolver: Resolver): CFBFReader {
+    const headerReader = resolver.get(TOKENS.headerReader);
+    const fatReader = resolver.get(TOKENS.fatReader);
+    const directoryReader = resolver.get(TOKENS.directoryReader);
     return new CFBFReader(headerReader, fatReader, directoryReader);
 }

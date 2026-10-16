@@ -1,10 +1,13 @@
-import {container} from "../../di/container";
 import {Readable} from 'stream';
 import {CFBFConstants} from "../../constants/cfbf";
 import {FATReader} from "./fatReader";
 import {MiniFATReader} from "./miniFATReader";
 import {MiniStreamReader} from "./miniStreamReader";
 import {DirectoryEntryRaw, DirectoryEntryType, DirectoryNode, HeaderInfo} from "../../types";
+import type { Resolver } from '../../di/service-locator';
+import { TOKENS } from '../../di/tokens';
+import { CorruptedSectorChainError } from '../../errors/errors';
+import type { InputSource } from '../InputSource';
 
 export class DirectoryReader {
     private entries: DirectoryEntryRaw[] = [];
@@ -31,7 +34,7 @@ export class DirectoryReader {
     /**
      * Reads all directory sectors using FAT chain
      */
-    async readDirectorySectors(input: string | Readable, headerInfo: HeaderInfo): Promise<Buffer> {
+    async readDirectorySectors(input: InputSource | Readable, headerInfo: HeaderInfo): Promise<Buffer> {
 
         // Ensure FAT table is available for this instance
         if (!this.fatReader) {
@@ -40,7 +43,7 @@ export class DirectoryReader {
              // Validate starting sector
         const start = headerInfo.dirSectorLocation;
         if (start === 0xFFFFFFFE || start === 0xFFFFFFFF) {
-            throw new Error(`Invalid directory start sector: ${start}`);
+            throw new CorruptedSectorChainError(`Invalid directory start sector: ${start}`);
         }
         return this.fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo);
     }
@@ -223,7 +226,8 @@ export class DirectoryReader {
     /**
      * Convenience: end-to-end load of directory (read sectors, parse, build tree)
      */
-    async loadDirectory(input: string | Readable, headerInfo: HeaderInfo): Promise<DirectoryNode | null> {
+    async loadDirectory(input: InputSource | Readable, headerInfo: HeaderInfo): Promise<DirectoryNode | null> {
+        this.miniStreamInitialized = false;
         const buffer = await this.readDirectorySectors(input, headerInfo);
         this.parseDirectoryEntries(buffer);
         return this.buildDirectoryTree();
@@ -232,7 +236,7 @@ export class DirectoryReader {
     /**
      * Initialize MiniFAT and MiniStream from Root Entry stream
      */
-    async initializeMiniStream(input: string | Readable, headerInfo: HeaderInfo): Promise<void> {
+    async initializeMiniStream(input: InputSource | Readable, headerInfo: HeaderInfo): Promise<void> {
         if (this.miniStreamInitialized) return;
 
         await this.miniFATReader?.buildMiniFAT(input, headerInfo);
@@ -267,7 +271,7 @@ export class DirectoryReader {
      * Read a stream by SID, choosing MiniStream or regular FAT by size
      */
     async readStreamBySid(
-        input: string | Readable,
+        input: InputSource | Readable,
         headerInfo: HeaderInfo,
         sid: number
     ): Promise<Buffer> {
@@ -278,7 +282,7 @@ export class DirectoryReader {
 
         const node = this.nodesBySid.get(sid);
         if (!node) {
-            throw new Error(`Directory entry SID ${sid} not found`);
+            throw new CorruptedSectorChainError(`Directory entry SID ${sid} not found`);
         }
 
 
@@ -290,7 +294,7 @@ export class DirectoryReader {
             node.startingSectorLocation === this.cfbConstants.END_OF_CHAIN ||
             node.startingSectorLocation === this.cfbConstants.FREE_SECTOR
         ) {
-            throw new Error(
+            throw new CorruptedSectorChainError(
                 `Corrupted stream "${node.name}": size=${node.streamSize}, sector=${node.startingSectorLocation}`
             );
         }
@@ -315,7 +319,7 @@ export class DirectoryReader {
         return chain.subarray(0, node.streamSize);
     }
 
-    async readStreamByPath(input: string | Readable, headerInfo: HeaderInfo, path: string[]): Promise<Buffer | null> {
+    async readStreamByPath(input: InputSource | Readable, headerInfo: HeaderInfo, path: string[]): Promise<Buffer | null> {
         const node = this.#findByPath(path);
 
         if (!node) return null;
@@ -323,11 +327,11 @@ export class DirectoryReader {
     }
 }
 
-export function DirectoryReaderFactory(): DirectoryReader {
-    const fatReader = container.get<FATReader>('fatReader');
-    const miniFATFactory = container.get<MiniFATReader>('miniFATReader');
-    const miniStreamFactory = container.get<MiniStreamReader>('miniStreamReader');
-    const cfbConstants = container.get<CFBFConstants>('cfbfConstants');
+export function DirectoryReaderFactory(resolver: Resolver): DirectoryReader {
+    const fatReader = resolver.get(TOKENS.fatReader);
+    const miniFATFactory = resolver.get(TOKENS.miniFATReader);
+    const miniStreamFactory = resolver.get(TOKENS.miniStreamReader);
+    const cfbConstants = resolver.get(TOKENS.cfbfConstants);
     return new DirectoryReader(fatReader, miniFATFactory, miniStreamFactory, cfbConstants);
 }
 

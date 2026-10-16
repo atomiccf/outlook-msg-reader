@@ -1,18 +1,32 @@
 {
   "name": "msg",
   "version": "1.0.0",
-  "main": "src/index.ts",
+  "description": "Dependency-free TypeScript parser for Microsoft Outlook MSG files",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "Readme.md"],
+  "sideEffects": false,
   "scripts": {
     "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsup src/index.ts --format esm,cjs --dts",
-    "start": "node --loader jiti/esm example.ts",
-    "example": "node --loader jiti/esm example.ts"
+    "inspect:fixtures": "npm run build && node scripts/inspect-fixtures.mjs",
+    "check:fixtures": "npm run build && node scripts/inspect-fixtures.mjs --strict",
+    "prepack": "npm run build",
+    "example": "node run.js"
   },
-  "keywords": [],
+  "keywords": ["outlook", "msg", "email", "parser", "cfbf", "mapi"],
   "author": "Viacheslau Vasilyeu",
   "license": "MIT",
-  "description": "",
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",

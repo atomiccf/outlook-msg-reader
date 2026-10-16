@@ -2,6 +2,7 @@ export interface MsgAttachment {
     name: string;
     mime: string;
     content: Buffer;
+    kind: 'file' | 'embedded-message';
 }
 
 export interface MsgBody {
@@ -10,11 +11,17 @@ export interface MsgBody {
     rtf?: string;
 }
 
+export interface MsgRecipient {
+    name: string;
+    email: string;
+}
+
 export interface Msg {
     subject: string;
-    from: { name: string; email: string };
-    to: Array<{ name: string; email: string }>;
-    cc?: Array<{ name: string; email: string }>;
+    from: MsgRecipient;
+    to: MsgRecipient[];
+    cc?: MsgRecipient[];
+    bcc?: MsgRecipient[];
     body: MsgBody;
     attachments: MsgAttachment[];
 }
