@@ -1,6 +1,5 @@
 {
   "schemaVersion": 1,
-  "generator": "scripts/MsgFixtureGenerator and scripts/generate-outlook-fixtures.ps1",
   "fixtures": [
     {
       "id": "plain-basic-unicode",

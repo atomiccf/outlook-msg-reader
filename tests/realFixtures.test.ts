@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createMsgReader, parseMsg } from '../src';
@@ -21,7 +21,7 @@ interface FixtureExpectation {
 interface Fixture {
   id: string;
   file: string;
-  sha256?: string;
+  sha256: string;
   msgFormat?: string;
   expected: FixtureExpectation;
 }
@@ -32,12 +32,22 @@ const manifest = JSON.parse(
 ) as { fixtures: Fixture[] };
 
 describe('real MSG fixtures', () => {
+  it('accounts for every fixture file and the Outlook-specific cases', () => {
+    const files = readdirSync(fixtureRoot)
+      .filter((file) => file.toLowerCase().endsWith('.msg'))
+      .sort();
+    expect(manifest.fixtures.map((fixture) => fixture.file).sort()).toEqual(files);
+    expect(new Set(manifest.fixtures.map((fixture) => fixture.id)).size).toBe(manifest.fixtures.length);
+    expect(manifest.fixtures.every((fixture) => /^[a-f0-9]{64}$/.test(fixture.sha256))).toBe(true);
+    expect(manifest.fixtures.some((fixture) => fixture.msgFormat?.toLowerCase() === 'ansi')).toBe(true);
+    expect(manifest.fixtures.some((fixture) =>
+      fixture.expected.attachmentKinds?.includes('embedded-message'))).toBe(true);
+  });
+
   it.each(manifest.fixtures)('parses $id', async (fixture) => {
     const filePath = path.join(fixtureRoot, fixture.file);
     const bytes = readFileSync(filePath);
-    if (fixture.sha256) {
-      expect(createHash('sha256').update(bytes).digest('hex')).toBe(fixture.sha256);
-    }
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(fixture.sha256);
 
     const message = await parseMsg(filePath);
     const expected = fixture.expected;
@@ -68,11 +78,4 @@ describe('real MSG fixtures', () => {
       await reader.close();
     }
   });
-
-  const hasAnsi = manifest.fixtures.some((fixture) => fixture.msgFormat?.toLowerCase() === 'ansi');
-  const hasEmbedded = manifest.fixtures.some((fixture) =>
-    fixture.expected.attachmentKinds?.includes('embedded-message'));
-
-  if (!hasAnsi) it.todo('parses a real ANSI MSG fixture produced by Outlook classic');
-  if (!hasEmbedded) it.todo('parses a real embedded-message fixture produced by Outlook classic');
 });
