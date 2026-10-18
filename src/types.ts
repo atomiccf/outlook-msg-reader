@@ -30,6 +30,12 @@ export interface MsgBody {
     rtf?: string;
 }
 
+/** A recoverable decoding failure that left part of the message unavailable. */
+export interface MsgDiagnostic {
+    code: 'HTML_DECODE_FAILED' | 'RTF_DECODE_FAILED';
+    message: string;
+}
+
 export interface MsgRecipient {
     name: string;
     email: string;
@@ -54,6 +60,8 @@ export interface Msg {
     body: MsgBody;
     attachments: MsgAttachment[];
     metadata?: MsgMetadata;
+    /** Recoverable body decoding failures. Omitted when none were encountered. */
+    diagnostics?: MsgDiagnostic[];
 }
 
 export interface HeaderInfo {

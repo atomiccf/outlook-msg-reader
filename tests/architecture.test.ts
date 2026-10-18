@@ -1,11 +1,25 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { preProcessFile } from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { createMsgReader, InvalidCfbfError, parseMsg } from '../src';
 import { createContainer } from '../src/di/container';
 import { TOKENS } from '../src/di/tokens';
 
 const sample = resolve(import.meta.dirname, 'fixtures/valid/outlook/plain-basic-unicode.msg');
+
+describe('format layer boundaries', () => {
+  it('keeps CFBF independent of MAPI and MSG modules', () => {
+    const root = resolve(import.meta.dirname, '../src/cfb');
+    const files = readdirSync(root, { recursive: true, encoding: 'utf8' })
+      .filter(file => file.endsWith('.ts'));
+    for (const file of files) {
+      const source = readFileSync(resolve(root, file), 'utf8');
+      const imports = preProcessFile(source).importedFiles.map(reference => reference.fileName);
+      expect(imports.filter(name => /(^|\/)(mapi|msg)(\/|$)/.test(name)), file).toEqual([]);
+    }
+  });
+});
 
 describe('dependency lifetimes', () => {
   it('shares stateless services and isolates file state between scopes', () => {

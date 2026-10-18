@@ -4,6 +4,7 @@ import type { PropertyStore } from '../src/mapi/PropertyStore';
 import { BodyReader } from '../src/msg/BodyReader';
 import { Decoder } from '../src/encoding/decoder';
 import type { CodePageReader } from '../src/mapi/CodePageReader';
+import { UnsupportedMsgFeatureError } from '../src/errors/errors';
 
 const createHtmlReader = (html: string | Buffer): BodyReader => {
   const properties = {
@@ -26,6 +27,42 @@ function createRtfHeader(rawSize: number): Buffer {
 }
 
 describe('BodyReader', () => {
+  it('reports an HTML decoding failure while preserving plain text', async () => {
+    const properties = {
+      readString: async () => 'Available text',
+      read: async (ids: string[]) => ids[0] === '1013' ? Buffer.from('<p>HTML</p>') : undefined,
+    } as unknown as PropertyStore;
+    const codePageReader = {
+      getCodepage: async () => { throw new UnsupportedMsgFeatureError('Unsupported MSG code page'); },
+    } as unknown as CodePageReader;
+    const onDiagnostic = vi.fn();
+    const reader = new BodyReader(properties, { warn: vi.fn() } as unknown as Logger,
+      new Decoder(), codePageReader);
+
+    await expect(reader.read(undefined, undefined, 0, onDiagnostic))
+      .resolves.toEqual({ text: 'Available text' });
+    expect(onDiagnostic).toHaveBeenCalledExactlyOnceWith({
+      code: 'HTML_DECODE_FAILED', message: 'Unable to decode HTML body',
+    });
+  });
+
+  it('does not turn an HTML resource-limit failure into a diagnostic', async () => {
+    const properties = {
+      readString: async () => undefined,
+      read: async () => Buffer.from('<p>HTML</p>'),
+    } as unknown as PropertyStore;
+    const codePageReader = {
+      getCodepage: async () => { throw new RangeError('Resource limit exceeded'); },
+    } as unknown as CodePageReader;
+    const onDiagnostic = vi.fn();
+    const reader = new BodyReader(properties, { warn: vi.fn() } as unknown as Logger,
+      new Decoder(), codePageReader);
+
+    await expect(reader.read(undefined, undefined, 0, onDiagnostic))
+      .rejects.toThrow('Resource limit exceeded');
+    expect(onDiagnostic).not.toHaveBeenCalled();
+  });
+
   it('rejects an RTF allocation larger than the remaining result budget', async () => {
     const properties = {
       readString: async () => 'text',

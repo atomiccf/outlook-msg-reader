@@ -8,8 +8,9 @@ import type { RecipientReader } from '../src/msg/RecipientReader';
 import type { SenderReader } from '../src/msg/SenderReader';
 import type { SubjectReader } from '../src/msg/SubjectReader';
 import { DEFAULT_MAX_ATTACHMENTS, DEFAULT_MAX_RESULT_BYTES } from '../src/api/options';
+import type { MsgDiagnostic } from '../src';
 
-function createReader() {
+function createReader(bodyReader?: BodyReader) {
   const readAttachments = vi.fn(async () => [{
     index: 0,
     name: 'x',
@@ -21,7 +22,7 @@ function createReader() {
   const reader = new MsgReader(
     {} as CFBFReader,
     { read: vi.fn(async () => 'Hi') } as unknown as SubjectReader,
-    { read: vi.fn(async () => ({ text: 'Hello' })) } as unknown as BodyReader,
+    bodyReader ?? { read: vi.fn(async () => ({ text: 'Hello' })) } as unknown as BodyReader,
     { read: vi.fn(async () => ({ name: '', email: '' })) } as unknown as SenderReader,
     { read: vi.fn(async () => ({ to: [] })) } as unknown as RecipientReader,
     { readAttachments } as unknown as AttachmentReader,
@@ -56,6 +57,28 @@ describe('MsgReader result limits', () => {
     reader.configure({ maxResultBytes: 16 });
 
     await expect(reader.parse()).resolves.toMatchObject({ subject: 'Hi', body: { text: 'Hello' } });
+  });
+
+  it('includes diagnostic strings in the result budget', async () => {
+    const diagnostic: MsgDiagnostic = { code: 'RTF_DECODE_FAILED', message: 'Invalid RTF' };
+    const bodyReader = {
+      read: async (
+        _maxRtfBytes?: number,
+        _maxResultBytes?: number,
+        _existingResultBytes?: number,
+        onDiagnostic?: (value: MsgDiagnostic) => void,
+      ) => {
+        onDiagnostic?.(diagnostic);
+        return { text: 'Hello' };
+      },
+    } as unknown as BodyReader;
+    const { reader } = createReader(bodyReader);
+    const exactBudget = 16 + Buffer.byteLength(diagnostic.code) + Buffer.byteLength(diagnostic.message);
+
+    reader.configure({ maxResultBytes: exactBudget - 1 });
+    await expect(reader.parse()).rejects.toThrow('MSG result exceeds maxResultBytes');
+    reader.configure({ maxResultBytes: exactBudget });
+    await expect(reader.parse()).resolves.toMatchObject({ diagnostics: [diagnostic] });
   });
 
   it.each(['maxAttachments', 'maxRecipients', 'maxResultBytes'] as const)(

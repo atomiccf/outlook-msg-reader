@@ -52,13 +52,14 @@ export async function createMsgReader(
 
 // Export classes for maximum flexibility
 export { MsgReader } from './msg/MsgReader';
-export { CFBFReader } from './cfb/CFBReader';
+export { MapiCFBFReader as CFBFReader } from './mapi/MapiCFBFReader';
 export { MsgError, InvalidCfbfError, CorruptedSectorChainError, PropertyDecodeError, UnsupportedPropertyTypeError, UnsupportedMsgFeatureError } from './errors/errors';
 
 // Export types
 export type { 
     Msg, 
     MsgBody, 
+    MsgDiagnostic,
     MsgAttachment,
     MsgFileAttachment,
     MsgEmbeddedMessageAttachment,

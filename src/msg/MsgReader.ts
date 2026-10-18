@@ -1,5 +1,5 @@
 import type { CFBFReader } from '../cfb/CFBReader';
-import type { Msg, MsgBody, MsgMetadata, MsgRecipient } from '../types';
+import type { Msg, MsgBody, MsgDiagnostic, MsgMetadata, MsgRecipient } from '../types';
 import type { AttachmentReader } from './AttachmentReader';
 import type { BodyReader } from './BodyReader';
 import type { RecipientReader, Recipients } from './RecipientReader';
@@ -23,6 +23,11 @@ export class MsgReader {
   private maxRtfBytes?: number;
   private maxEmbeddedMessageDepth = DEFAULT_MAX_EMBEDDED_MESSAGE_DEPTH;
   private signal?: AbortSignal;
+  private readonly diagnostics = new Map<MsgDiagnostic['code'], MsgDiagnostic>();
+  private readonly reportDiagnostic = (diagnostic: MsgDiagnostic): void => {
+    this.signal?.throwIfAborted();
+    this.diagnostics.set(diagnostic.code, diagnostic);
+  };
 
   constructor(
     private readonly cfbReader: CFBFReader,
@@ -111,6 +116,7 @@ export class MsgReader {
       this.maxRtfBytes,
       this.maxResultBytes,
       this.maxResultBytes - remaining,
+      this.reportDiagnostic,
     );
     charge(body);
     const from = await this.getFrom();
@@ -131,6 +137,8 @@ export class MsgReader {
     charge(attachments);
     const metadata = await this.getMetadata();
     charge(metadata);
+    const diagnostics = this.getDiagnostics();
+    charge(diagnostics);
     return {
       subject,
       body,
@@ -140,11 +148,18 @@ export class MsgReader {
       bcc: recipients.bcc,
       attachments,
       metadata,
+      ...(diagnostics.length ? { diagnostics } : {}),
     };
   }
 
   getSubject(): Promise<string> { return this.subjectReader.read(); }
-  getBody(): Promise<MsgBody> { return this.bodyReader.read(this.maxRtfBytes, this.maxResultBytes); }
+  getBody(): Promise<MsgBody> {
+    return this.bodyReader.read(this.maxRtfBytes, this.maxResultBytes, 0, this.reportDiagnostic);
+  }
+  /** Snapshot of recoverable failures encountered by reads in this message session. */
+  getDiagnostics(): MsgDiagnostic[] {
+    return Array.from(this.diagnostics.values(), diagnostic => ({ ...diagnostic }));
+  }
   getFrom(): Promise<MsgRecipient> { return this.senderReader.read(); }
   async getRecipients(): Promise<Recipients> {
     try {

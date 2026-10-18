@@ -14,57 +14,6 @@ function createSource() {
 }
 
 describe('CFBFReader', () => {
-  it('preserves a long embedded NUL run followed by non-padding text', async () => {
-    const reader = new CFBFReader({} as HeaderReader, {} as FATReader, {} as DirectoryReader);
-    const value = '\0'.repeat(32_000) + 'X';
-    vi.spyOn(reader, 'readStream').mockResolvedValue(Buffer.from(value + '\0', 'utf16le'));
-    await expect(reader.readStreamAsString(['Root Entry', '__substg1.0_0037001F'], 0x001F)).resolves.toBe(value);
-  });
-
-  it('decodes PT_STRING8 using the MSG code page', async () => {
-    const properties = Buffer.alloc(48);
-    properties.writeUInt16LE(0x0003, 32);
-    properties.writeUInt16LE(0x3ffd, 34);
-    properties.writeInt32LE(1251, 40);
-    const reader = new CFBFReader({} as HeaderReader, {} as FATReader, {} as DirectoryReader);
-    vi.spyOn(reader, 'readStream').mockImplementation(async (path) =>
-      path[path.length - 1] === '__properties_version1.0'
-        ? properties
-        : Buffer.from([0xcf, 0xf0, 0x00, 0xe8, 0xe2, 0xe5, 0xf2, 0x00]));
-
-    await expect(reader.readStreamAsString(['Root Entry', '__substg1.0_0037001E'], 0x001E))
-      .resolves.toBe('Пр\0ивет');
-  });
-
-  it('preserves embedded NUL characters in PT_UNICODE strings', async () => {
-    const reader = new CFBFReader({} as HeaderReader, {} as FATReader, {} as DirectoryReader);
-    vi.spyOn(reader, 'readStream').mockResolvedValue(Buffer.from('A\0B\0', 'utf16le'));
-
-    await expect(reader.readStreamAsString(['Root Entry', '__substg1.0_0037001F'], 0x001F))
-      .resolves.toBe('A\0B');
-  });
-
-  it('uses an embedded message code page for its PT_STRING8 streams', async () => {
-    const embeddedStorage = [
-      'Root Entry',
-      '__attach_version1.0_#00000000',
-      '__substg1.0_3701000D',
-    ];
-    const properties = Buffer.alloc(40);
-    properties.writeUInt16LE(0x0003, 24);
-    properties.writeUInt16LE(0x3ffd, 26);
-    properties.writeInt32LE(1251, 32);
-    const reader = new CFBFReader({} as HeaderReader, {} as FATReader, {} as DirectoryReader);
-    const readStream = vi.spyOn(reader, 'readStream').mockImplementation(async (path) =>
-      path[path.length - 1] === '__properties_version1.0'
-        ? properties
-        : Buffer.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2, 0x00]));
-
-    await expect(reader.readStreamAsString([...embeddedStorage, '__substg1.0_0037001E'], 0x001E))
-      .resolves.toBe('Привет');
-    expect(readStream).toHaveBeenCalledWith([...embeddedStorage, '__properties_version1.0']);
-  });
-
   it('closes the previous input before loading another one', async () => {
     const firstSource = createSource();
     const secondSource = createSource();
@@ -99,14 +48,15 @@ describe('CFBFReader', () => {
     expect(reader.getTree()).toBeNull();
   });
 
-  it('rejects a declared stream larger than maxResultBytes before reading it', async () => {
+  it('does not apply the parsed result budget to raw or encoded streams', async () => {
     const source = createSource();
     const header = Buffer.alloc(512, 0xff);
     header.writeUInt16LE(3, 0x1a);
     header.writeUInt16LE(9, 0x1e);
     header.writeUInt16LE(6, 0x20);
     const tree = {} as DirectoryNode;
-    const readStreamByPath = vi.fn(async () => Buffer.alloc(10));
+    const buffer = Buffer.from('Hi\0\0\0', 'utf16le');
+    const readStreamByPath = vi.fn(async () => buffer);
     const reader = new CFBFReader(
       { readHeaderWithSource: vi.fn(async () => ({ header, source })) } as unknown as HeaderReader,
       { buildTable: vi.fn(async () => undefined) } as unknown as FATReader,
@@ -117,11 +67,9 @@ describe('CFBFReader', () => {
         readStreamByPath,
       } as unknown as DirectoryReader,
     );
-    await reader.load(Buffer.alloc(0), { maxResultBytes: 9 });
+    await reader.load(Buffer.alloc(0), { maxResultBytes: 2 });
 
-    await expect(reader.readStream(['Root Entry', 'large']))
-      .rejects.toThrow('MSG result exceeds maxResultBytes (9)');
-    expect(readStreamByPath).not.toHaveBeenCalled();
+    await expect(reader.readStream(['Root Entry', 'large'])).resolves.toBe(buffer);
     await reader.close();
   });
 });

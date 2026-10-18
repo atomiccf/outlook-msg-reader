@@ -23,6 +23,21 @@ for (const attachment of message.attachments) {
 
 `parseMsg()` accepts a file path, `Buffer`, or Node.js `Readable`. It returns the message, recipients, body formats, and attachments. ANSI and Unicode MSG files are supported.
 
+## Partial results and diagnostics
+
+HTML decoding and RTF decompression are tolerant: when either fails, the parser keeps the other available body formats and reports the failure in `message.diagnostics`. An absent body format without a diagnostic means no decoding failure was encountered for that format.
+
+```ts
+const message = await parseMsg('email.msg');
+for (const diagnostic of message.diagnostics ?? []) {
+  console.warn(diagnostic.code, diagnostic.message);
+}
+```
+
+Diagnostics have the exported `MsgDiagnostic` type with a stable `code` (`HTML_DECODE_FAILED` or `RTF_DECODE_FAILED`) and a human-readable `message`. The `diagnostics` field is omitted when no recoverable failures were encountered. Diagnostic strings count toward `maxResultBytes`.
+
+With `createMsgReader()`, call `reader.getDiagnostics()` after awaiting `getBody()` or `parse()`. It returns a snapshot of failures encountered so far; it does not trigger parsing. Repeated reads do not duplicate diagnostics. Embedded messages returned by `getEmbeddedMessage()` carry their own diagnostics. Errors outside tolerant body decoding, resource-limit violations, and cancellation still reject rather than returning a partial result.
+
 ## Large attachments
 
 Use `createMsgReader()` to inspect attachments without loading every file into memory:
@@ -64,8 +79,10 @@ const message = await parseMsg(stream, {
 
 The signal applies to the lifetime of a reader returned by `createMsgReader()`, including attachment reads. Synchronous parsing work does not yield to abort events; this timeout interrupts asynchronous input waits.
 
-These limits do not provide a timeout or cancellation: a stream that never ends can keep a read pending. `maxResultBytes` limits the returned data, not peak memory use; for example, RTF is decompressed before the remaining result budget is checked. Use `maxRtfBytes` to limit decompressed RTF separately.
+The size limits alone do not provide a timeout or cancellation: a stream that never ends can keep a read pending. `maxResultBytes` limits the combined UTF-8 string and Buffer payload bytes in a parsed result, not peak memory use or raw CFBF stream sizes. Internal property tables, source encodings, and stream padding do not count toward this budget. Use `maxInputBytes` to limit input size and `maxRtfBytes` to limit decompressed RTF separately.
 
 Returned HTML is not sanitized. Applications must render it safely. For untrusted messages, consider isolating parsing in a worker or process with application-managed time and memory limits.
+
+The internal `src/cfb` layer reads compound-file streams as bytes. MAPI property types, MSG code pages, and embedded-message storage rules live above it. The public `CFBFReader` export retains `readStreamAsString()` through a MAPI adapter for API compatibility.
 
 Run `npm test` to check the MSG fixtures, including Outlook classic ANSI and embedded-message samples.

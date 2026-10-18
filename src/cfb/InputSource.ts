@@ -18,7 +18,7 @@ export interface InputSourceOptions {
     maxDirectoryDepth?: number;
     /** Maximum size of the buffered CFBF directory. Defaults to 32 MiB. */
     maxDirectoryBytes?: number;
-    /** Maximum combined payload bytes in a parsed result, used to reject oversized buffered streams early. */
+    /** Maximum combined UTF-8 string and Buffer payload bytes in a parsed MSG result; does not limit raw CFBF streams. */
     maxResultBytes?: number;
 }
 

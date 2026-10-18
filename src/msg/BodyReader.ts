@@ -1,6 +1,6 @@
 import type { Logger } from '../logging/Logger';
 import type { PropertyStore } from '../mapi/PropertyStore';
-import type { MsgBody } from '../types';
+import type { MsgBody, MsgDiagnostic } from '../types';
 import { decompressRtf } from '../rtf/decompressRtf';
 import type { Decoder } from '../encoding/decoder';
 import type { CodePageReader } from '../mapi/CodePageReader';
@@ -14,7 +14,12 @@ export class BodyReader {
     private readonly codePageReader: CodePageReader,
   ) {}
 
-  async read(maxRtfBytes?: number, maxResultBytes?: number, existingResultBytes = 0): Promise<MsgBody> {
+  async read(
+    maxRtfBytes?: number,
+    maxResultBytes?: number,
+    existingResultBytes = 0,
+    onDiagnostic?: (diagnostic: MsgDiagnostic) => void,
+  ): Promise<MsgBody> {
     const body: MsgBody = {};
     let usedBytes = existingResultBytes;
     const charge = (value?: string): void => {
@@ -38,6 +43,8 @@ export class BodyReader {
       try {
         body.html = await this.decodeHtml(html);
       } catch (error) {
+        if (error instanceof RangeError) throw error;
+        onDiagnostic?.({ code: 'HTML_DECODE_FAILED', message: 'Unable to decode HTML body' });
         this.logger.warn('Unable to decode HTML body', error);
       }
     }
@@ -55,6 +62,7 @@ export class BodyReader {
         charge(body.rtf);
       } catch (error) {
         if (error instanceof RangeError) throw error;
+        onDiagnostic?.({ code: 'RTF_DECODE_FAILED', message: 'Unable to decompress RTF body' });
         this.logger.warn('Unable to decompress RTF body', error);
       }
     }
