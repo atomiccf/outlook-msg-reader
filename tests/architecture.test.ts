@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createMsgReader, InvalidCfbfError, parseMsg } from '../src';
 import { createContainer } from '../src/di/container';
 import { TOKENS } from '../src/di/tokens';
 
-const sample = 'sample/sample.msg';
-const sampleIt = existsSync(sample) ? it : it.skip;
+const sample = resolve(import.meta.dirname, 'fixtures/valid/outlook/plain-basic-unicode.msg');
 
 describe('dependency lifetimes', () => {
   it('shares stateless services and isolates file state between scopes', () => {
@@ -25,7 +25,7 @@ describe('isolated message sessions', () => {
     await expect(parseMsg(Buffer.alloc(512))).rejects.toBeInstanceOf(InvalidCfbfError);
   });
 
-  sampleIt('supports Buffer input and parallel readers without console output', async () => {
+  it('supports Buffer input and parallel readers without console output', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     try {
@@ -36,11 +36,15 @@ describe('isolated message sessions', () => {
         parseMsg(data),
       ]);
 
-      expect(first.getCFBReader()).not.toBe(second.getCFBReader());
-      expect(await first.getSubject()).toBe(await second.getSubject());
-      expect(parsed).toHaveProperty('attachments');
-      expect(log).not.toHaveBeenCalled();
-      expect(info).not.toHaveBeenCalled();
+      try {
+        expect(first.getCFBReader()).not.toBe(second.getCFBReader());
+        expect(await first.getSubject()).toBe(await second.getSubject());
+        expect(parsed).toHaveProperty('attachments');
+        expect(log).not.toHaveBeenCalled();
+        expect(info).not.toHaveBeenCalled();
+      } finally {
+        await Promise.all([first.close(), second.close()]);
+      }
     } finally {
       log.mockRestore();
       info.mockRestore();
