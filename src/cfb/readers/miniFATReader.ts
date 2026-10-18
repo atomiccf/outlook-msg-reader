@@ -15,13 +15,17 @@ export class MiniFATReader {
         this.fatReader = fatReader;
     }
 
+    reset(): void {
+        this.miniFAT = [];
+    }
+
 
     /**
      * Builds the miniFAT by reading all sectors from the FAT chain
      * headerInfo.miniFatStartSector must point to the first sector of the miniFAT (or null/undefined if none)
      */
     async buildMiniFAT(input: RandomAccessInput, headerInfo: HeaderInfo) {
-        this.miniFAT = [];
+        this.reset();
 
         let sector:number | null = headerInfo.miniFatStartSector;
         const sectorCount = headerInfo.miniFatSectorCount;

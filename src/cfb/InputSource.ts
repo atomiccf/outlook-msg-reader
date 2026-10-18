@@ -39,13 +39,16 @@ export async function readAt(input: RandomAccessInput, offset: number, length: n
 }
 
 class BufferSource implements RandomAccessSource {
-    constructor(private readonly buffer: Buffer) {}
+    constructor(private buffer: Buffer | undefined) {}
 
     async read(offset: number, length: number): Promise<Buffer> {
+        if (!this.buffer) throw new Error('Cannot read from a closed MSG input');
         return readAt(this.buffer, offset, length);
     }
 
-    async close(): Promise<void> {}
+    async close(): Promise<void> {
+        this.buffer = undefined;
+    }
 }
 
 class FileSource implements RandomAccessSource {

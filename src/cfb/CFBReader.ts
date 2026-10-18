@@ -22,7 +22,7 @@ export interface ICFBFReader {
 
 export class CFBFReader implements ICFBFReader {
     private tree: DirectoryNode | null = null;
-    private headerInfo!: HeaderInfo;
+    private headerInfo?: HeaderInfo;
     private input?: RandomAccessSource;
     private readonly headerReader: HeaderReader;
     private readonly fatReader: FATReader;
@@ -107,6 +107,7 @@ export class CFBFReader implements ICFBFReader {
     }
 
     getHeaderInfo(): HeaderInfo {
+        if (!this.headerInfo) throw new InvalidCfbfError('CFBF is not loaded');
         return this.headerInfo;
     }
 
@@ -118,6 +119,9 @@ export class CFBFReader implements ICFBFReader {
         const input = this.input;
         this.input = undefined;
         this.tree = null;
+        this.headerInfo = undefined;
+        this.directoryReader.reset();
+        this.fatReader.reset();
         await input?.close();
     }
 }

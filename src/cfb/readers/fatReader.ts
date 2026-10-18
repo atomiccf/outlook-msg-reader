@@ -7,9 +7,14 @@ import { END_OF_CHAIN, FREE_SECTOR, MAX_REGULAR_SECTOR } from '../../constants/c
 export class FATReader {
     private fatTable: Record<number, number> = {};
     private fatEntryCount = 0;
-    async buildTable(input: RandomAccessInput, headerInfo: HeaderInfo) {
+
+    reset(): void {
         this.fatTable = {};
         this.fatEntryCount = 0;
+    }
+
+    async buildTable(input: RandomAccessInput, headerInfo: HeaderInfo) {
+        this.reset();
         const fatSectorLocations = await this.readFatSectorLocations(input, headerInfo);
         headerInfo.fatSectorLocations = fatSectorLocations;
 

@@ -33,6 +33,17 @@ export class DirectoryReader {
         this.miniStreamReader = miniStreamReader;
     }
 
+    reset(): void {
+        this.entries = [];
+        this.nodesBySid.clear();
+        this.childrenByNode.clear();
+        this.root = null;
+        this.miniStreamInitialized = false;
+        this.miniStreamInitialization = undefined;
+        this.miniStreamReader?.reset();
+        this.miniFATReader?.reset();
+    }
+
     /**
      * Reads all directory sectors using FAT chain
      */

@@ -24,6 +24,16 @@ export class MiniStreamReader {
         private readonly fatReader: FATReader,
     ) {}
 
+    reset(): void {
+        this.input = undefined;
+        this.headerInfo = undefined;
+        this.rootStartSector = undefined;
+        this.rootStreamSize = 0;
+        this.rootSectors.length = 0;
+        this.visitedRootSectors.clear();
+        this.cachedSector = undefined;
+    }
+
     /**
      * Configures random access to the root mini-stream without materializing it.
      */

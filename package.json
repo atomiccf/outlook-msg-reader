@@ -1,7 +1,7 @@
 {
   "name": "outlook-msg-reader",
-  "version": "1.0.0",
-  "description": "Dependency-free TypeScript parser for Microsoft Outlook MSG files",
+  "version": "0.1.0",
+  "description": "Parser for Microsoft Outlook MSG files",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -21,7 +21,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "prepack": "npm run build"
   },
-  "keywords": ["outlook", "msg", "email", "parser", "cfbf", "mapi"],
+  "keywords": ["outlook", "msg", "email", "parser", "cfbf"],
   "author": "Viacheslau Vasilyeu",
   "license": "MIT",
   "repository": {

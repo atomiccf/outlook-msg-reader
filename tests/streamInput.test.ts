@@ -257,6 +257,22 @@ describe('Readable input', () => {
 });
 
 describe('Buffer input', () => {
+  it('releases its buffer on repeated close without changing caller-owned data', async () => {
+    const input = Buffer.from('payload');
+    const source = createRandomAccessSource(input, fs);
+    const result = await source.read(0, input.length);
+    expect(source).toHaveProperty('buffer', input);
+
+    await source.close();
+    await source.close();
+
+    expect(source).toHaveProperty('buffer', undefined);
+    expect(input.toString()).toBe('payload');
+    expect(result.toString()).toBe('payload');
+    await expect(source.read(0, 1)).rejects.toThrow('closed MSG input');
+    await expect(source.read(0, 0)).rejects.toThrow('closed MSG input');
+  });
+
   it('rejects input beyond the configured size limit before reading it', () => {
     expect(() => createRandomAccessSource(Buffer.alloc(9), fs, {
       maxInputBytes: 8,
