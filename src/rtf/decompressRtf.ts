@@ -1,4 +1,5 @@
 import { PropertyDecodeError } from '../errors/errors';
+import { TextDecoder } from 'node:util';
 
 const COMPRESSED_MAGIC = 0x75465a4c; // LZFu
 const UNCOMPRESSED_MAGIC = 0x414c454d; // MELA
@@ -8,6 +9,26 @@ const INITIAL_DICTIONARY = Buffer.from(
   '{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}{\\f0\\fnil \\froman \\fswiss \\fmodern \\fscript \\fdecor MS Sans SerifSymbolArialTimes New RomanCourier{\\colortbl\\red0\\green0\\blue0\r\n\\par \\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx',
   'ascii',
 );
+
+function decodeRtf(bytes: Buffer): string {
+  const preserved = bytes.toString('latin1');
+  const codePage = /\\ansicpg(\d+)(?!\d)/.exec(preserved)?.[1];
+  if (!codePage) return preserved;
+
+  const otherEncodings: Record<string, string> = {
+    '65001': 'utf-8',
+    '28592': 'iso-8859-2',
+    '20866': 'koi8-r',
+    '20127': 'us-ascii',
+  };
+  const encoding = otherEncodings[codePage] ?? `windows-${codePage}`;
+  try {
+    return new TextDecoder(encoding).decode(bytes);
+  } catch (error) {
+    if (error instanceof RangeError) return preserved;
+    throw error;
+  }
+}
 
 /** Decompresses PidTagRtfCompressed according to MS-OXRTFCP. */
 export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_RTF_BYTES): string {
@@ -26,7 +47,7 @@ export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_R
 
   if (magic === UNCOMPRESSED_MAGIC) {
     if (16 + rawSize > input.length) throw new PropertyDecodeError('Uncompressed RTF body is truncated');
-    return input.subarray(16, 16 + rawSize).toString('ascii');
+    return decodeRtf(input.subarray(16, 16 + rawSize));
   }
   if (magic !== COMPRESSED_MAGIC) throw new PropertyDecodeError('Unknown compressed RTF signature');
 
@@ -53,7 +74,7 @@ export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_R
       const second = input[inputOffset++];
       let referenceOffset = (first << 4) | (second >> 4);
       const length = (second & 0x0f) + 2;
-      if (referenceOffset === dictionaryOffset) return output.subarray(0, outputOffset).toString('ascii');
+      if (referenceOffset === dictionaryOffset) return decodeRtf(output.subarray(0, outputOffset));
 
       for (let index = 0; index < length && outputOffset < rawSize; index += 1) {
         const value = dictionary[referenceOffset];
@@ -66,5 +87,5 @@ export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_R
   }
 
   if (outputOffset !== rawSize) throw new PropertyDecodeError(`Compressed RTF ended at ${outputOffset} of ${rawSize} bytes`);
-  return output.toString('ascii');
+  return decodeRtf(output);
 }

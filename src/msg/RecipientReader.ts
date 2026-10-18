@@ -1,4 +1,5 @@
 import type { Logger } from '../logging/Logger';
+import { PropertyDecodeError } from '../errors/errors';
 import type { PropertyStore } from '../mapi/PropertyStore';
 import type { PropertyStreamReader } from '../mapi/PropertyStreamReader';
 import type { MsgRecipient } from '../types';
@@ -31,7 +32,9 @@ export class RecipientReader {
         if (!recipient.name && !recipient.email) continue;
         (type === 2 ? cc : type === 3 ? bcc : to).push(recipient);
       } catch (error) {
-        this.logger.warn(`Unable to read recipient at ${storagePath.join(' / ')}`, error);
+        const message = `Unable to read recipient at ${storagePath.join(' / ')}`;
+        this.logger.warn(message, error);
+        throw new PropertyDecodeError(message, error);
       }
     }
 

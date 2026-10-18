@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../src/logging/Logger';
 import type { PropertyStore } from '../src/mapi/PropertyStore';
 import type { PropertyStreamReader } from '../src/mapi/PropertyStreamReader';
+import { PropertyDecodeError } from '../src/errors/errors';
 import { RecipientReader } from '../src/msg/RecipientReader';
 import { SenderReader } from '../src/msg/SenderReader';
 
@@ -69,6 +70,31 @@ describe('address readers', () => {
     expect(readString).not.toHaveBeenCalledWith(['0E04']);
     expect(readString).toHaveBeenCalledWith(['0E03']);
     expect(readString).toHaveBeenCalledWith(['0E02']);
+  });
+
+  it('reports a failed recipient instead of returning a partial list', async () => {
+    const first = ['Root Entry', '__recip_version1.0_#00000000'];
+    const second = ['Root Entry', '__recip_version1.0_#00000001'];
+    const failure = new Error('damaged property');
+    const properties = {
+      findStorages: () => [first, second],
+      readStringAt: vi.fn(async (path: string[], ids: string[]) => {
+        if (path === second) throw failure;
+        return ids[0] === '3001' ? 'Primary' : 'primary@example.test';
+      }),
+      readString: vi.fn(async () => undefined),
+    } as unknown as PropertyStore;
+    const propertyStream = {
+      readNumber: vi.fn(async () => 1),
+    } as unknown as PropertyStreamReader;
+
+    const read = new RecipientReader(properties, propertyStream, { warn: vi.fn() } as unknown as Logger).read();
+
+    await expect(read).rejects.toMatchObject({
+      name: PropertyDecodeError.name,
+      message: `Unable to read recipient at ${second.join(' / ')}`,
+      cause: failure,
+    });
   });
 
   it('prefers the sender SMTP property over an Exchange Legacy DN', async () => {

@@ -113,19 +113,15 @@ describe('FAT sector chains', () => {
     );
   });
 
-  it('does not read sectors beyond the declared stream size', async () => {
+  it('rejects a chain longer than the declared stream size', async () => {
     const input = createInput();
     input.writeUInt32LE(2, sectorOffset(0) + 4);
     input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(0) + 8);
-    input.fill(0x11, sectorOffset(1), sectorOffset(1) + sectorSize);
-    input.fill(0x22, sectorOffset(2), sectorOffset(2) + sectorSize);
     const { reader, header } = await createReader(input);
 
-    const chain = await reader.readChain(input, 1, header, sectorSize);
-
-    expect(chain).toHaveLength(sectorSize);
-    expect(chain[0]).toBe(0x11);
-    expect(chain).not.toContain(0x22);
+    await expect(reader.readChain(input, 1, header, sectorSize)).rejects.toThrow(
+      'FAT chain continues after 1 sectors; expected 1',
+    );
   });
 
   it('streams sectors and trims the final chunk to the declared size', async () => {

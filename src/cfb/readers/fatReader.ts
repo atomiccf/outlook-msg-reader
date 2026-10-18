@@ -199,6 +199,11 @@ export class FATReader {
 
             const next = this.getNextSector(sector);
             if (expectedSectors !== undefined && sectorsRead === expectedSectors) {
+                if (next !== null) {
+                    throw new CorruptedSectorChainError(
+                        `FAT chain continues after ${sectorsRead} sectors; expected ${expectedSectors}`
+                    );
+                }
                 sector = null;
                 continue;
             }
