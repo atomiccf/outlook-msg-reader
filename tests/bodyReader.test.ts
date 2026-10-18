@@ -5,7 +5,7 @@ import { BodyReader } from '../src/msg/BodyReader';
 import { Decoder } from '../src/encoding/decoder';
 import type { CodePageReader } from '../src/mapi/CodePageReader';
 
-const createHtmlReader = (html: string): BodyReader => {
+const createHtmlReader = (html: string | Buffer): BodyReader => {
   const properties = {
     readString: async () => undefined,
     read: async (ids: string[]) => ids[0] === '1013' ? Buffer.from(html) : undefined,
@@ -107,6 +107,26 @@ describe('BodyReader', () => {
 });
 
 describe('BodyReader HTML fallback', () => {
+  it.each([4096, 4097])('decodes HTML with %i trailing padding bytes', async (paddingBytes) => {
+    const html = '<html><body><p>Test email body.</p></body></html>';
+    const bytes = Buffer.concat([Buffer.from(html), Buffer.alloc(paddingBytes)]);
+
+    const body = await createHtmlReader(bytes).read();
+
+    expect(body).toEqual({ html, text: 'Test email body.' });
+  });
+
+  it('preserves UTF-16LE HTML without a BOM when the stream has padding', async () => {
+    const html = '<p>Привет, 世界</p>';
+    const bytes = Buffer.concat([Buffer.from(html, 'utf16le'), Buffer.alloc(4096)]);
+
+    expect(await createHtmlReader(bytes).read()).toEqual({ html, text: 'Привет, 世界' });
+  });
+
+  it('decodes an all-zero HTML stream as empty text', async () => {
+    expect(await createHtmlReader(Buffer.alloc(4096)).read()).toEqual({ html: '' });
+  });
+
   it('extracts readable text when a message only has an HTML body', async () => {
     const body = await createHtmlReader('<html><head><style>p{color:red}</style></head><body><p>Test &amp; message</p></body></html>').read();
 

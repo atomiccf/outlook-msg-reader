@@ -82,13 +82,15 @@ export class BodyReader {
   }
 
   private isLikelyUtf16Le(value: Buffer): boolean {
-    const pairs = Math.floor(value.length / 2);
-    if (pairs === 0) return false;
+    let pairs = 0;
     let zeroHighBytes = 0;
-    for (let index = 1; index < pairs * 2; index += 2) {
+    for (let index = 1; index < value.length; index += 2) {
+      // NUL terminators and stream padding do not indicate a text encoding.
+      if (value[index - 1] === 0 && value[index] === 0) continue;
+      pairs += 1;
       if (value[index] === 0) zeroHighBytes += 1;
     }
-    return zeroHighBytes / pairs > 0.3;
+    return pairs > 0 && zeroHighBytes / pairs > 0.3;
   }
 
   private htmlToText(html: string): string {
