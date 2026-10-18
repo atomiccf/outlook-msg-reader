@@ -1,4 +1,4 @@
-import {CFBFConstants} from "../../constants/cfbf";
+import { END_OF_CHAIN, FREE_SECTOR } from "../../constants/cfbf";
 import {FATReader} from "./fatReader";
 import {MiniFATReader} from "./miniFATReader";
 import {MiniStreamReader} from "./miniStreamReader";
@@ -9,6 +9,7 @@ import { CorruptedSectorChainError } from '../../errors/errors';
 import type { RandomAccessSource } from '../InputSource';
 
 export const DEFAULT_MAX_DIRECTORY_DEPTH = 128;
+export const DEFAULT_MAX_DIRECTORY_BYTES = 32 * 1024 * 1024;
 
 export class DirectoryReader {
     private entries: DirectoryEntryRaw[] = [];
@@ -19,24 +20,25 @@ export class DirectoryReader {
     private miniStreamReader: MiniStreamReader | null = null;
     private miniStreamInitialized = false;
     private miniStreamInitialization?: Promise<void>;
-    private cfbConstants:CFBFConstants;
 
     constructor(
         fatReader:FATReader,
         miniFATReader:MiniFATReader,
-        miniStreamReader:MiniStreamReader,
-        cfbConstants:CFBFConstants
+        miniStreamReader:MiniStreamReader
     ) {
         this.fatReader = fatReader;
         this.miniFATReader = miniFATReader;
         this.miniStreamReader = miniStreamReader;
-        this.cfbConstants = cfbConstants;
     }
 
     /**
      * Reads all directory sectors using FAT chain
      */
-    async readDirectorySectors(input: RandomAccessSource, headerInfo: HeaderInfo): Promise<Buffer> {
+    async readDirectorySectors(
+        input: RandomAccessSource,
+        headerInfo: HeaderInfo,
+        maxDirectoryBytes = DEFAULT_MAX_DIRECTORY_BYTES,
+    ): Promise<Buffer> {
 
         // Ensure FAT table is available for this instance
         if (!this.fatReader) {
@@ -50,7 +52,9 @@ export class DirectoryReader {
         const expectedSize = headerInfo.numDirectorySectors > 0
             ? headerInfo.numDirectorySectors * headerInfo.sectorSize
             : undefined;
-        return this.fatReader.readChain(input, headerInfo.dirSectorLocation, headerInfo, expectedSize);
+        return this.fatReader.readChain(
+            input, headerInfo.dirSectorLocation, headerInfo, expectedSize, maxDirectoryBytes,
+        );
     }
 
     /**
@@ -298,10 +302,11 @@ export class DirectoryReader {
         input: RandomAccessSource,
         headerInfo: HeaderInfo,
         maxDirectoryDepth?: number,
+        maxDirectoryBytes = DEFAULT_MAX_DIRECTORY_BYTES,
     ): Promise<DirectoryNode | null> {
         this.miniStreamInitialized = false;
         this.miniStreamInitialization = undefined;
-        const buffer = await this.readDirectorySectors(input, headerInfo);
+        const buffer = await this.readDirectorySectors(input, headerInfo, maxDirectoryBytes);
         this.parseDirectoryEntries(buffer, headerInfo);
         return this.buildDirectoryTree(maxDirectoryDepth);
     }
@@ -363,8 +368,8 @@ export class DirectoryReader {
         }
 
          if (
-            node.startingSectorLocation === this.cfbConstants.END_OF_CHAIN ||
-            node.startingSectorLocation === this.cfbConstants.FREE_SECTOR
+            node.startingSectorLocation === END_OF_CHAIN ||
+            node.startingSectorLocation === FREE_SECTOR
         ) {
             throw new CorruptedSectorChainError(
                 `Corrupted stream "${node.name}": size=${node.streamSize}, sector=${node.startingSectorLocation}`
@@ -395,7 +400,7 @@ export class DirectoryReader {
     async readStreamByPath(input: RandomAccessSource, headerInfo: HeaderInfo, path: string[]): Promise<Buffer | null> {
         const node = this.findByPath(path);
 
-        if (!node) return null;
+        if (!node || node.type !== DirectoryEntryType.Stream) return null;
         return this.readStreamBySid(input, headerInfo, node.sid);
     }
 
@@ -411,8 +416,8 @@ export class DirectoryReader {
             return (async function* () {})();
         }
         if (
-            node.startingSectorLocation === this.cfbConstants.END_OF_CHAIN ||
-            node.startingSectorLocation === this.cfbConstants.FREE_SECTOR
+            node.startingSectorLocation === END_OF_CHAIN ||
+            node.startingSectorLocation === FREE_SECTOR
         ) {
             throw new CorruptedSectorChainError(
                 `Corrupted stream "${node.name}": size=${node.streamSize}, sector=${node.startingSectorLocation}`
@@ -441,7 +446,6 @@ export function DirectoryReaderFactory(resolver: Resolver): DirectoryReader {
     const fatReader = resolver.get(TOKENS.fatReader);
     const miniFATFactory = resolver.get(TOKENS.miniFATReader);
     const miniStreamFactory = resolver.get(TOKENS.miniStreamReader);
-    const cfbConstants = resolver.get(TOKENS.cfbfConstants);
-    return new DirectoryReader(fatReader, miniFATFactory, miniStreamFactory, cfbConstants);
+    return new DirectoryReader(fatReader, miniFATFactory, miniStreamFactory);
 }
 

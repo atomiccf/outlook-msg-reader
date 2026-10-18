@@ -1,32 +1,16 @@
 import { HeaderInfo } from "../../types";
-import type * as fs from 'node:fs';
 import { parseUint32Array } from "../../utils/utils";
-import type { Resolver } from '../../di/service-locator';
-import { TOKENS } from '../../di/tokens';
 import { CorruptedSectorChainError } from '../../errors/errors';
 import { readAt, type RandomAccessInput } from '../InputSource';
-import { CFBFConstants } from '../../constants/cfbf';
+import { END_OF_CHAIN, FREE_SECTOR, MAX_REGULAR_SECTOR } from '../../constants/cfbf';
 
 export class FATReader {
     private fatTable: Record<number, number> = {};
-    private readonly constants: CFBFConstants;
-
-    constructor(constants?: CFBFConstants);
-    constructor(_legacyFs: typeof fs, constants?: CFBFConstants);
-    constructor(
-        constantsOrLegacyFs: CFBFConstants | typeof fs = new CFBFConstants(),
-        legacyConstants?: CFBFConstants,
-    ){
-        this.constants = legacyConstants ?? (
-            constantsOrLegacyFs instanceof CFBFConstants
-                ? constantsOrLegacyFs
-                : new CFBFConstants()
-        );
-    }
-
+    private fatEntryCount = 0;
     async buildTable(input: RandomAccessInput, headerInfo: HeaderInfo) {
         this.fatTable = {};
-        const fatSectorLocations = await this.#readFatSectorLocations(input, headerInfo);
+        this.fatEntryCount = 0;
+        const fatSectorLocations = await this.readFatSectorLocations(input, headerInfo);
         headerInfo.fatSectorLocations = fatSectorLocations;
 
         for (let fatSectorOrdinal = 0; fatSectorOrdinal < fatSectorLocations.length; fatSectorOrdinal++) {
@@ -41,28 +25,29 @@ export class FATReader {
                 const actualIndex = fatSectorOrdinal * entries.length + i;
                 this.fatTable[actualIndex] = entries[i];
             }
+            this.fatEntryCount += entries.length;
         }
 
         return this.fatTable;
     }
 
-    async #readFatSectorLocations(input: RandomAccessInput, headerInfo: HeaderInfo): Promise<number[]> {
+    private async readFatSectorLocations(input: RandomAccessInput, headerInfo: HeaderInfo): Promise<number[]> {
         const locations = [...headerInfo.fatSectorLocations];
         const expectedCount = headerInfo.numFATSectors;
         const difatSectorCount = headerInfo.numDIFATSectors ?? 0;
-        let difatSector = headerInfo.difatStartSector ?? this.constants.END_OF_CHAIN;
+        let difatSector = headerInfo.difatStartSector ?? END_OF_CHAIN;
 
         for (const sector of locations) {
-            this.#assertRegularSector(sector, 'FAT sector');
+            this.assertRegularSector(sector, 'FAT sector');
         }
 
         if (difatSectorCount === 0) {
-            if (difatSector !== this.constants.END_OF_CHAIN) {
+            if (difatSector !== END_OF_CHAIN) {
                 throw new CorruptedSectorChainError(
                     `DIFAT start sector is ${difatSector}, but the header declares no DIFAT sectors`
                 );
             }
-        } else if (difatSector === this.constants.END_OF_CHAIN) {
+        } else if (difatSector === END_OF_CHAIN) {
             throw new CorruptedSectorChainError('DIFAT chain is missing its first sector');
         }
 
@@ -70,7 +55,7 @@ export class FATReader {
         const entriesPerDifatSector = headerInfo.sectorSize / 4 - 1;
 
         for (let ordinal = 0; ordinal < difatSectorCount; ordinal++) {
-            this.#assertRegularSector(difatSector, 'DIFAT sector');
+            this.assertRegularSector(difatSector, 'DIFAT sector');
             if (visited.has(difatSector)) {
                 throw new CorruptedSectorChainError('DIFAT sector chain loop detected');
             }
@@ -79,17 +64,17 @@ export class FATReader {
             const bytes = await this.readSector(input, difatSector, headerInfo);
             for (let i = 0; i < entriesPerDifatSector; i++) {
                 const fatSector = bytes.readUInt32LE(i * 4);
-                if (fatSector === this.constants.FREE_SECTOR) continue;
-                this.#assertRegularSector(fatSector, 'FAT sector');
+                if (fatSector === FREE_SECTOR) continue;
+                this.assertRegularSector(fatSector, 'FAT sector');
                 locations.push(fatSector);
             }
 
             const next = bytes.readUInt32LE(headerInfo.sectorSize - 4);
             const isLast = ordinal === difatSectorCount - 1;
-            if (isLast && next !== this.constants.END_OF_CHAIN) {
+            if (isLast && next !== END_OF_CHAIN) {
                 throw new CorruptedSectorChainError('DIFAT sector chain does not terminate at the declared length');
             }
-            if (!isLast && next === this.constants.END_OF_CHAIN) {
+            if (!isLast && next === END_OF_CHAIN) {
                 throw new CorruptedSectorChainError('DIFAT sector chain ended before the declared length');
             }
             difatSector = next;
@@ -108,14 +93,14 @@ export class FATReader {
         return locations;
     }
 
-    #assertRegularSector(sector: number, label: string): void {
-        if (!Number.isInteger(sector) || sector < 0 || sector > this.constants.MAX_REGULAR_SECTOR) {
+    private assertRegularSector(sector: number, label: string): void {
+        if (!Number.isInteger(sector) || sector < 0 || sector > MAX_REGULAR_SECTOR) {
             throw new CorruptedSectorChainError(`Invalid ${label} index: ${sector}`);
         }
     }
 
     async readSector(input: RandomAccessInput, sectorIndex: number, headerInfo: HeaderInfo): Promise<Buffer> {
-        this.#assertRegularSector(sectorIndex, 'sector');
+        this.assertRegularSector(sectorIndex, 'sector');
         const offset = (sectorIndex + 1) * headerInfo.sectorSize;
 
         const result = await readAt(input, offset, headerInfo.sectorSize);
@@ -134,11 +119,11 @@ export class FATReader {
         if (next === undefined) {
             throw new CorruptedSectorChainError(`FAT entry is missing for sector ${sectorIndex}`);
         }
-        if (next === this.constants.END_OF_CHAIN) return null;
-        if (next === this.constants.FREE_SECTOR) {
+        if (next === END_OF_CHAIN) return null;
+        if (next === FREE_SECTOR) {
             throw new CorruptedSectorChainError(`FAT chain points to a free sector after sector ${sectorIndex}`);
         }
-        if (next > this.constants.MAX_REGULAR_SECTOR) {
+        if (next > MAX_REGULAR_SECTOR) {
             throw new CorruptedSectorChainError(
                 `FAT chain contains invalid marker 0x${next.toString(16).toUpperCase()} after sector ${sectorIndex}`
             );
@@ -155,10 +140,11 @@ export class FATReader {
         input: RandomAccessInput,
         startSector: number,
         headerInfo: HeaderInfo,
-        expectedSize?: number
+        expectedSize?: number,
+        maxBytes?: number,
     ): Promise<Buffer> {
         const buffers: Buffer[] = [];
-        for await (const chunk of this.readChainChunks(input, startSector, headerInfo, expectedSize)) {
+        for await (const chunk of this.readChainChunks(input, startSector, headerInfo, expectedSize, maxBytes)) {
             buffers.push(chunk);
         }
         return Buffer.concat(buffers);
@@ -169,15 +155,19 @@ export class FATReader {
         input: RandomAccessInput,
         startSector: number,
         headerInfo: HeaderInfo,
-        expectedSize?: number
+        expectedSize?: number,
+        maxBytes?: number,
     ): AsyncGenerator<Buffer> {
-        if (!this.fatTable || Object.keys(this.fatTable).length === 0) {
+        if (this.fatEntryCount === 0) {
             throw new CorruptedSectorChainError('FAT table is empty');
         }
-        this.#assertRegularSector(startSector, 'chain start sector');
+        this.assertRegularSector(startSector, 'chain start sector');
 
         if (expectedSize !== undefined && (!Number.isSafeInteger(expectedSize) || expectedSize < 0)) {
             throw new CorruptedSectorChainError(`Invalid expected stream size: ${expectedSize}`);
+        }
+        if (maxBytes !== undefined && expectedSize !== undefined && expectedSize > maxBytes) {
+            throw new RangeError(`CFBF chain exceeds maximum buffered bytes (${maxBytes})`);
         }
         if (expectedSize === 0) return;
 
@@ -186,6 +176,7 @@ export class FATReader {
             ? undefined
             : Math.ceil(expectedSize / headerInfo.sectorSize);
         let sectorsRead = 0;
+        let bytesRead = 0;
         let remaining = expectedSize;
 
         let sector: number | null = startSector;
@@ -195,9 +186,14 @@ export class FATReader {
             }
             visited.add(sector);
 
+            const nextChunkBytes = Math.min(headerInfo.sectorSize, remaining ?? headerInfo.sectorSize);
+            if (maxBytes !== undefined && nextChunkBytes > maxBytes - bytesRead) {
+                throw new RangeError(`CFBF chain exceeds maximum buffered bytes (${maxBytes})`);
+            }
             const bytes = await this.readSector(input, sector, headerInfo);
             sectorsRead += 1;
             const chunk = remaining === undefined ? bytes : bytes.subarray(0, Math.min(bytes.length, remaining));
+            bytesRead += chunk.length;
             if (chunk.length > 0) yield chunk;
             if (remaining !== undefined) remaining -= chunk.length;
 
@@ -216,7 +212,6 @@ export class FATReader {
     }
 }
 
-export function FATReaderFactory(resolver: Resolver): FATReader {
-    const constants = resolver.get(TOKENS.cfbfConstants);
-    return new FATReader(constants);
+export function FATReaderFactory(): FATReader {
+    return new FATReader();
 }

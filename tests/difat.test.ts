@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CFBFConstants } from '../src/constants/cfbf';
+import * as constants from '../src/constants/cfbf';
 import { FATReader } from '../src/cfb/readers/fatReader';
 import { CorruptedSectorChainError } from '../src/errors/errors';
 import type { HeaderInfo } from '../src/types';
 
-const constants = new CFBFConstants();
 const sectorSize = 512;
 
 function createHeaderInfo(overrides: Partial<HeaderInfo> = {}): HeaderInfo {
@@ -31,7 +30,7 @@ function sectorOffset(sector: number): number {
 }
 
 function createReader(): FATReader {
-  return new FATReader(constants);
+  return new FATReader();
 }
 
 describe('DIFAT parsing', () => {

@@ -30,4 +30,12 @@ describe('CodePageReader', () => {
 
     await expect(new CodePageReader(propertyStream).getCodepage()).resolves.toBe(1251);
   });
+
+  it('accepts US-ASCII code page 20127', async () => {
+    const propertyStream = {
+      readNumber: vi.fn(async () => 20127),
+    } as unknown as PropertyStreamReader;
+
+    await expect(new CodePageReader(propertyStream).getCodepage()).resolves.toBe(20127);
+  });
 });

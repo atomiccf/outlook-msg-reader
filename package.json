@@ -1,5 +1,5 @@
 {
-  "name": "msg",
+  "name": "outlook-msg-reader",
   "version": "1.0.0",
   "description": "Dependency-free TypeScript parser for Microsoft Outlook MSG files",
   "main": "./dist/index.js",
@@ -19,12 +19,20 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsup src/index.ts --format esm,cjs --dts",
+    "inspect:fixtures": "npm run build && node scripts/inspect-fixtures.mjs",
+    "check:fixtures": "npm run build && node scripts/inspect-fixtures.mjs --strict",
     "prepack": "npm run build",
     "example": "node run.js"
   },
   "keywords": ["outlook", "msg", "email", "parser", "cfbf", "mapi"],
   "author": "Viacheslau Vasilyeu",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atomiccf/msg-js.git"
+  },
+  "bugs": "https://github.com/atomiccf/msg-js/issues",
+  "homepage": "https://github.com/atomiccf/msg-js#readme",
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",

@@ -13,11 +13,23 @@ export class BodyReader {
     private readonly codePageReader: CodePageReader,
   ) {}
 
-  async read(maxRtfBytes?: number): Promise<MsgBody> {
+  async read(maxRtfBytes?: number, maxResultBytes?: number, existingResultBytes = 0): Promise<MsgBody> {
     const body: MsgBody = {};
+    let usedBytes = existingResultBytes;
+    const charge = (value?: string): void => {
+      if (maxResultBytes === undefined || value === undefined) return;
+      const bytes = Buffer.byteLength(value);
+      if (bytes > maxResultBytes - usedBytes) {
+        throw new RangeError(`MSG result exceeds maxResultBytes (${maxResultBytes})`);
+      }
+      usedBytes += bytes;
+    };
     const primary = await this.properties.readString(['1000']);
     const fallback = primary && this.isBody(primary) ? primary : await this.properties.readString(['8010']);
-    if (fallback && this.isBody(fallback)) body.text = fallback;
+    if (fallback && this.isBody(fallback)) {
+      body.text = fallback;
+      charge(fallback);
+    }
 
     const html = await this.properties.read(['1013'], { preferBinary: true });
     if (typeof html === 'string') body.html = html;
@@ -28,12 +40,17 @@ export class BodyReader {
         this.logger.warn('Unable to decode HTML body', error);
       }
     }
-    if (!body.text && body.html) body.text = this.htmlToText(body.html);
+    charge(body.html);
+    if (!body.text && body.html) {
+      body.text = this.htmlToText(body.html);
+      charge(body.text);
+    }
 
     const rtf = await this.properties.read(['1009'], { preferBinary: true });
     if (Buffer.isBuffer(rtf) && rtf.length) {
       try {
         body.rtf = decompressRtf(rtf, maxRtfBytes);
+        charge(body.rtf);
       } catch (error) {
         if (error instanceof RangeError) throw error;
         this.logger.warn('Unable to decompress RTF body', error);

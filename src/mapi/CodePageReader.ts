@@ -27,7 +27,7 @@ export class CodePageReader {
         const codepageValue = await this.propertyStream.readNumber(this.rootStorage, ['3FFD', '3FDE']);
 
         if (codepageValue !== undefined) {
-            const supportedCodepages: SupportedCodePage[] = [65001, 1250, 1251, 1252, 1253, 1254, 1255, 1256, 1257, 1258];
+            const supportedCodepages: SupportedCodePage[] = [65001, 20127, 28592, 20866, 1250, 1251, 1252, 1253, 1254, 1255, 1256, 1257, 1258];
             if (supportedCodepages.includes(codepageValue as SupportedCodePage)) {
                 this.cachedCodepage = codepageValue as SupportedCodePage;
             } else {

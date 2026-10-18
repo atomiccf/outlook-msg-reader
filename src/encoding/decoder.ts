@@ -9,9 +9,10 @@ import {
     CP1257,
     CP1258
 } from "./index";
+import { TextDecoder } from 'node:util';
 
 export type SupportedCodePage =
-    | 65001 | 1250 | 1251 | 1252 | 1253 | 1254 | 1255 | 1256 | 1257 | 1258;
+    | 65001 | 20127 | 28592 | 20866 | 1250 | 1251 | 1252 | 1253 | 1254 | 1255 | 1256 | 1257 | 1258;
 
 const TABLES: Partial<Record<SupportedCodePage, string[]>> = {
     1250: CP1250,
@@ -28,6 +29,11 @@ const TABLES: Partial<Record<SupportedCodePage, string[]>> = {
 export class Decoder {
      decodeBytes(bytes: Uint8Array, codepage: SupportedCodePage): string {
         if (codepage === 65001) return Buffer.from(bytes).toString('utf8');
+        if (codepage === 20127) return Array.from(bytes, byte =>
+            byte < 0x80 ? String.fromCharCode(byte) : '\uFFFD'
+        ).join('');
+        if (codepage === 28592) return new TextDecoder('iso-8859-2').decode(bytes);
+        if (codepage === 20866) return new TextDecoder('koi8-r').decode(bytes);
         const table = TABLES[codepage];
         if (!table) throw new Error(`Unknown code page: ${codepage}`);
 
@@ -59,18 +65,21 @@ export class Decoder {
                 return text;
             }
 
-            // map charset к Node.js
-            const mapCharset = (cs: string) => {
-                switch (cs.toLowerCase()) {
-                    case 'utf-8': return 'utf8';
-                    case 'us-ascii': return 'ascii';
-                    case 'iso-8859-1': return 'latin1';
-                    default: return 'utf8';
-                }
-            };
-
             try {
-                return buf.toString(mapCharset(charset));
+                const normalizedCharset = charset.trim().toLowerCase();
+                switch (normalizedCharset) {
+                    case 'utf-8':
+                    case 'utf8':
+                        return buf.toString('utf8');
+                    case 'us-ascii':
+                    case 'ascii':
+                        return buf.toString('ascii');
+                    case 'iso-8859-1':
+                    case 'latin1':
+                        return buf.toString('latin1');
+                    default:
+                        return new TextDecoder(normalizedCharset).decode(buf);
+                }
             } catch {
                 return buf.toString('utf8');
             }

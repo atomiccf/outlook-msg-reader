@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CFBFConstants } from '../src/constants/cfbf';
+import * as constants from '../src/constants/cfbf';
 import { DirectoryReader } from '../src/cfb/readers/directoryReader';
 import type { FATReader } from '../src/cfb/readers/fatReader';
 import type { MiniFATReader } from '../src/cfb/readers/miniFATReader';
@@ -7,7 +7,6 @@ import type { MiniStreamReader } from '../src/cfb/readers/miniStreamReader';
 import type { RandomAccessSource } from '../src/cfb/InputSource';
 import { DirectoryEntryType, type HeaderInfo } from '../src/types';
 
-const constants = new CFBFConstants();
 const NOSTREAM = -1;
 
 function createReader(): DirectoryReader {
@@ -15,7 +14,6 @@ function createReader(): DirectoryReader {
     {} as FATReader,
     {} as MiniFATReader,
     {} as MiniStreamReader,
-    constants,
   );
 }
 
@@ -81,6 +79,22 @@ function version3Header(): HeaderInfo {
 }
 
 describe('CFBF directory validation', () => {
+  it('does not read a storage node as a stream', async () => {
+    const buffer = createDirectory();
+    buffer.writeUInt8(DirectoryEntryType.Storage, 128 + 0x42);
+    const reader = createReader();
+    reader.parseDirectoryEntries(buffer, version3Header());
+    reader.buildDirectoryTree();
+    const readStreamBySid = vi.spyOn(reader, 'readStreamBySid');
+
+    await expect(reader.readStreamByPath(
+      {} as RandomAccessSource,
+      version3Header(),
+      ['Root Entry', 'first'],
+    )).resolves.toBeNull();
+    expect(readStreamBySid).not.toHaveBeenCalled();
+  });
+
   it('initializes the MiniFAT once for concurrent mini-stream reads', async () => {
     const buffer = createDirectory();
     buffer.writeBigUInt64LE(4n, 128 + 0x78);
@@ -94,7 +108,6 @@ describe('CFBF directory validation', () => {
       {} as FATReader,
       { buildMiniFAT } as unknown as MiniFATReader,
       { loadMiniStream, readMiniStream } as unknown as MiniStreamReader,
-      constants,
     );
     const header = version3Header();
     reader.parseDirectoryEntries(buffer, header);
@@ -121,7 +134,6 @@ describe('CFBF directory validation', () => {
       {} as FATReader,
       { buildMiniFAT } as unknown as MiniFATReader,
       { loadMiniStream } as unknown as MiniStreamReader,
-      constants,
     );
     const header = version3Header();
     reader.parseDirectoryEntries(createDirectory(), header);

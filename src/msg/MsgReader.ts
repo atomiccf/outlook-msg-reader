@@ -88,7 +88,11 @@ export class MsgReader {
     };
     const subject = await this.getSubject();
     charge(subject);
-    const body = await this.getBody();
+    const body = await this.bodyReader.read(
+      this.maxRtfBytes,
+      this.maxResultBytes,
+      this.maxResultBytes - remaining,
+    );
     charge(body);
     const from = await this.getFrom();
     charge(from);
@@ -119,7 +123,7 @@ export class MsgReader {
   }
 
   getSubject(): Promise<string> { return this.subjectReader.read(); }
-  getBody(): Promise<MsgBody> { return this.bodyReader.read(this.maxRtfBytes); }
+  getBody(): Promise<MsgBody> { return this.bodyReader.read(this.maxRtfBytes, this.maxResultBytes); }
   getFrom(): Promise<MsgRecipient> { return this.senderReader.read(); }
   getRecipients(): Promise<Recipients> { return this.recipientReader.read(); }
   getAttachments() {

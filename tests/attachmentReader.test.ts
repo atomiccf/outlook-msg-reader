@@ -26,6 +26,34 @@ function node(name: string, type: DirectoryEntryType, children: DirectoryNode[] 
 }
 
 describe('AttachmentReader streaming', () => {
+  it('reuses attachment metadata across listing and opening attachments', async () => {
+    const storages = Array.from({ length: 24 }, (_, index) => [
+      'Root Entry', `__attach_version1.0_#${index.toString(16).padStart(8, '0')}`,
+    ]);
+    const findStorages = vi.fn(() => storages);
+    const readStringAt = vi.fn(async (path: string[], ids: string[]) =>
+      ids[0] === '3707' ? path[1] : undefined);
+    const readNumber = vi.fn(async () => 1);
+    const openStream = vi.fn(async () => Readable.from([Buffer.from('data')]));
+    const reader = new AttachmentReader(
+      { getStreamSize: () => 4, openStream } as unknown as CFBFReader,
+      { findStorages, readStringAt } as unknown as PropertyStore,
+      { readNumber } as unknown as PropertyStreamReader,
+    );
+
+    const infos = await reader.readAttachmentInfos();
+    infos[0].name = 'changed by caller';
+    for (let index = 0; index < storages.length; index++) {
+      const attachment = await reader.openAttachment(index);
+      expect(attachment.name).toBe(storages[index][1]);
+    }
+    await expect(reader.readAttachmentInfos(1)).rejects.toThrow('MSG has more than maxAttachments (1)');
+    expect(findStorages).toHaveBeenCalledTimes(1);
+    expect(readNumber).toHaveBeenCalledTimes(storages.length);
+    expect(readStringAt).toHaveBeenCalledTimes(storages.length * 2);
+    expect(openStream).toHaveBeenCalledTimes(storages.length);
+  });
+
   it('rejects too many attachments before reading their properties', async () => {
     const readStringAt = vi.fn(async () => 'name');
     const reader = new AttachmentReader(

@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import { CFBFConstants } from '../constants/cfbf';
 import { CFBFReaderFactory } from '../cfb/CFBReader';
 import { DirectoryReaderFactory } from '../cfb/readers/directoryReader';
 import { FATReaderFactory } from '../cfb/readers/fatReader';
@@ -16,7 +15,6 @@ import { TOKENS } from './tokens';
 export function createContainer(): ServiceLocator {
   const result = new ServiceLocator();
   result.register(TOKENS.fs, fs);
-  result.register(TOKENS.cfbfConstants, new CFBFConstants());
   result.register(TOKENS.logger, new NoopLogger());
   result.factory(TOKENS.decoder, DecoderFactory, 'singleton');
   result.factory(TOKENS.headerReader, HeaderReaderFactory, 'singleton');

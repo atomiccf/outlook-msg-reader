@@ -16,6 +16,7 @@ export class MiniStreamReader {
     private rootStartSector?: number;
     private rootStreamSize = 0;
     private readonly rootSectors: number[] = [];
+    private readonly visitedRootSectors = new Set<number>();
     private cachedSector?: { index: number; data: Buffer };
 
     constructor(
@@ -36,7 +37,11 @@ export class MiniStreamReader {
         this.rootStartSector = root.startingSectorLocation;
         this.rootStreamSize = root.streamSize;
         this.rootSectors.length = 0;
-        if (root.streamSize > 0) this.rootSectors.push(root.startingSectorLocation);
+        this.visitedRootSectors.clear();
+        if (root.streamSize > 0) {
+            this.rootSectors.push(root.startingSectorLocation);
+            this.visitedRootSectors.add(root.startingSectorLocation);
+        }
         this.cachedSector = undefined;
     }
 
@@ -110,10 +115,11 @@ export class MiniStreamReader {
             if (next === null) {
                 throw new CorruptedSectorChainError('Root mini stream FAT chain ended unexpectedly');
             }
-            if (this.rootSectors.includes(next)) {
+            if (this.visitedRootSectors.has(next)) {
                 throw new CorruptedSectorChainError('Root mini stream FAT chain loop detected');
             }
             this.rootSectors.push(next);
+            this.visitedRootSectors.add(next);
         }
         return this.rootSectors[ordinal];
     }

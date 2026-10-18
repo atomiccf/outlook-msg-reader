@@ -21,7 +21,9 @@ import type { MsgReaderOptions } from './api/options';
 export async function parseMsg(input: InputSource, options: MsgReaderOptions = {}): Promise<Msg> {
     const reader = await createScopedMsgReader(input, options);
     try {
-        return await reader.parse();
+        const message = await reader.parse();
+        await reader.getCFBReader().finishInput();
+        return message;
     } finally {
         await reader.close();
     }

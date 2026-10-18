@@ -26,7 +26,7 @@ describe('FATReader', () => {
       miniFatSectorCount: 0,
     };
 
-    const reader = new FATReader({} as typeof import('node:fs'));
+    const reader = new FATReader();
     await reader.buildTable(input, headerInfo);
 
     expect(reader.getNextSector(0)).toBe(7);

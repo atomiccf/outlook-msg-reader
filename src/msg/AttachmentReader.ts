@@ -8,7 +8,15 @@ import { UnsupportedMsgFeatureError } from '../errors/errors';
 
 export type EmbeddedMessageReaderFactory = (rootStorage: string[]) => MsgReader;
 
+type AttachmentEntry = {
+  info: MsgAttachmentInfo;
+  storagePath: string[];
+  dataPath: string[];
+};
+
 export class AttachmentReader {
+  private attachmentStorages?: string[][];
+  private attachmentEntries?: Promise<AttachmentEntry[]>;
   constructor(
     private readonly cfbReader: CFBFReader,
     private readonly properties: PropertyStore,
@@ -67,7 +75,7 @@ export class AttachmentReader {
   }
 
   async readAttachmentInfos(maxAttachments?: number): Promise<MsgAttachmentInfo[]> {
-    return (await this.readAttachmentEntries(maxAttachments)).map(({ info }) => info);
+    return (await this.readAttachmentEntries(maxAttachments)).map(({ info }) => ({ ...info }));
   }
 
   async openAttachment(index: number, maxAttachments?: number): Promise<MsgAttachmentStream> {
@@ -112,20 +120,20 @@ export class AttachmentReader {
     return reader.parse();
   }
 
-  private async readAttachmentEntries(maxAttachments?: number): Promise<Array<{
-    info: MsgAttachmentInfo;
-    storagePath: string[];
-    dataPath: string[];
-  }>> {
-    const result: Array<{
-      info: MsgAttachmentInfo;
-      storagePath: string[];
-      dataPath: string[];
-    }> = [];
-    const storages = this.properties.findStorages('__attach_version1.0_');
+  private async readAttachmentEntries(maxAttachments?: number): Promise<AttachmentEntry[]> {
+    const storages = this.attachmentStorages ??= this.properties.findStorages('__attach_version1.0_');
     if (maxAttachments !== undefined && storages.length > maxAttachments) {
       throw new RangeError(`MSG has more than maxAttachments (${maxAttachments})`);
     }
+    this.attachmentEntries ??= this.loadAttachmentEntries(storages).catch((error: unknown) => {
+      this.attachmentEntries = undefined;
+      throw error;
+    });
+    return this.attachmentEntries;
+  }
+
+  private async loadAttachmentEntries(storages: string[][]): Promise<AttachmentEntry[]> {
+    const result: AttachmentEntry[] = [];
     for (let index = 0; index < storages.length; index++) {
       const storagePath = storages[index];
       const method = await this.propertyStream.readNumber(storagePath, ['3705']);

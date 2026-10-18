@@ -5,17 +5,25 @@ import type { Readable } from 'node:stream';
 
 export type InputSource = string | Buffer | Readable;
 
+export const DEFAULT_MAX_INPUT_BYTES = 512 * 1024 * 1024;
+
 export interface InputSourceOptions {
-    /** Maximum size of a Buffer, file, or complete Readable input. Unlimited by default. */
+    /** Maximum size of a Buffer, file, or complete Readable input. Defaults to 512 MiB. */
     maxInputBytes?: number;
     /** Bytes retained in memory before a Readable input spills to a temporary file. */
     streamMemoryThreshold?: number;
     /** Maximum directory nesting below the CFBF root. Defaults to 128. */
     maxDirectoryDepth?: number;
+    /** Maximum size of the buffered CFBF directory. Defaults to 32 MiB. */
+    maxDirectoryBytes?: number;
+    /** Maximum combined payload bytes in a parsed result, used to reject oversized buffered streams early. */
+    maxResultBytes?: number;
 }
 
 export interface RandomAccessSource {
     read(offset: number, length: number): Promise<Buffer>;
+    /** Consume unread input when a caller needs to validate its complete size. */
+    finish?(): Promise<void>;
     close(): Promise<void>;
 }
 
@@ -86,8 +94,9 @@ class FileSource implements RandomAccessSource {
 }
 
 class ReadableSource implements RandomAccessSource {
+    private static readonly BLOCK_SIZE = 64 * 1024;
     private readonly iterator: AsyncIterator<unknown>;
-    private readonly chunks: Array<{ offset: number; data: Buffer }> = [];
+    private readonly chunks: Buffer[] = [];
     private bufferedLength = 0;
     private ended = false;
     private failure: unknown;
@@ -105,20 +114,19 @@ class ReadableSource implements RandomAccessSource {
         this.input = input;
         this.iterator = input[Symbol.asyncIterator]();
         this.memoryThreshold = options.streamMemoryThreshold ?? 8 * 1024 * 1024;
-        this.maxInputBytes = options.maxInputBytes;
+        this.maxInputBytes = options.maxInputBytes ?? DEFAULT_MAX_INPUT_BYTES;
         validateLimit('streamMemoryThreshold', this.memoryThreshold);
-        if (this.maxInputBytes !== undefined) validateLimit('maxInputBytes', this.maxInputBytes);
+        validateLimit('maxInputBytes', this.maxInputBytes);
     }
 
     private readonly input: Readable;
 
     async read(offset: number, length: number): Promise<Buffer> {
         validateRange(offset, length);
-        if (length === 0 && this.maxInputBytes === undefined) return Buffer.alloc(0);
-
-        await this.ensureBuffered(this.maxInputBytes === undefined ? offset + length : Number.POSITIVE_INFINITY);
-        if (this.failure) throw this.failure;
         if (length === 0) return Buffer.alloc(0);
+
+        await this.ensureBuffered(offset + length);
+        if (this.failure) throw this.failure;
         if (offset >= this.bufferedLength) return Buffer.alloc(0);
 
         const available = Math.min(length, this.bufferedLength - offset);
@@ -139,19 +147,20 @@ class ReadableSource implements RandomAccessSource {
         }
 
         let written = 0;
-
-        for (const chunk of this.chunks) {
-            const chunkEnd = chunk.offset + chunk.data.length;
-            if (chunkEnd <= offset) continue;
-            if (chunk.offset >= offset + available) break;
-
-            const sourceStart = Math.max(0, offset - chunk.offset);
-            const sourceEnd = Math.min(chunk.data.length, offset + available - chunk.offset);
-            chunk.data.copy(result, written, sourceStart, sourceEnd);
-            written += sourceEnd - sourceStart;
+        while (written < available) {
+            const position = offset + written;
+            const chunk = this.chunks[Math.floor(position / ReadableSource.BLOCK_SIZE)];
+            const sourceStart = position % ReadableSource.BLOCK_SIZE;
+            const count = Math.min(available - written, chunk.length - sourceStart);
+            chunk.copy(result, written, sourceStart, sourceStart + count);
+            written += count;
         }
 
         return result;
+    }
+
+    async finish(): Promise<void> {
+        await this.ensureBuffered(Number.POSITIVE_INFINITY);
     }
 
     async close(): Promise<void> {
@@ -191,7 +200,7 @@ class ReadableSource implements RandomAccessSource {
                     if (this.tempHandle) {
                         await writeAll(this.tempHandle, data, this.bufferedLength);
                     } else {
-                        this.chunks.push({ offset: this.bufferedLength, data });
+                        this.appendToMemory(data);
                     }
                     this.bufferedLength += data.length;
                 }
@@ -205,11 +214,27 @@ class ReadableSource implements RandomAccessSource {
         await fill;
     }
 
+    private appendToMemory(data: Buffer): void {
+        let copied = 0;
+        while (copied < data.length) {
+            const blockIndex = Math.floor((this.bufferedLength + copied) / ReadableSource.BLOCK_SIZE);
+            const blockOffset = (this.bufferedLength + copied) % ReadableSource.BLOCK_SIZE;
+            const block = this.chunks[blockIndex] ??= Buffer.allocUnsafe(
+                Math.min(ReadableSource.BLOCK_SIZE, this.memoryThreshold - blockIndex * ReadableSource.BLOCK_SIZE),
+            );
+            const count = Math.min(data.length - copied, block.length - blockOffset);
+            data.copy(block, blockOffset, copied, copied + count);
+            copied += count;
+        }
+    }
+
     private async spillToDisk(): Promise<void> {
         this.tempDirectory = await this.fsModule.promises.mkdtemp(join(tmpdir(), 'msg-js-'));
         this.tempHandle = await this.fsModule.promises.open(join(this.tempDirectory, 'input.msg'), 'w+');
-        for (const chunk of this.chunks) {
-            await writeAll(this.tempHandle, chunk.data, chunk.offset);
+        for (let index = 0; index < this.chunks.length; index++) {
+            const offset = index * ReadableSource.BLOCK_SIZE;
+            const length = Math.min(this.chunks[index].length, this.bufferedLength - offset);
+            await writeAll(this.tempHandle, this.chunks[index].subarray(0, length), offset);
         }
         this.chunks.length = 0;
     }
@@ -220,15 +245,16 @@ export function createRandomAccessSource(
     fsModule: typeof fs,
     options: InputSourceOptions = {},
 ): RandomAccessSource {
-    if (options.maxInputBytes !== undefined) validateLimit('maxInputBytes', options.maxInputBytes);
+    const maxInputBytes = options.maxInputBytes ?? DEFAULT_MAX_INPUT_BYTES;
+    validateLimit('maxInputBytes', maxInputBytes);
     if (Buffer.isBuffer(input)) {
-        if (options.maxInputBytes !== undefined && input.length > options.maxInputBytes) {
-            throw new RangeError(`Buffer MSG input exceeds maxInputBytes (${options.maxInputBytes})`);
+        if (input.length > maxInputBytes) {
+            throw new RangeError(`Buffer MSG input exceeds maxInputBytes (${maxInputBytes})`);
         }
         return new BufferSource(input);
     }
-    if (typeof input === 'string') return new FileSource(input, fsModule, options.maxInputBytes);
-    return new ReadableSource(input, fsModule, options);
+    if (typeof input === 'string') return new FileSource(input, fsModule, maxInputBytes);
+    return new ReadableSource(input, fsModule, { ...options, maxInputBytes });
 }
 
 function validateRange(offset: number, length: number): void {

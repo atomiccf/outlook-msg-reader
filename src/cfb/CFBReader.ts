@@ -11,6 +11,7 @@ import { Readable } from 'node:stream';
 import { Decoder } from '../encoding/decoder';
 import { CodePageReader } from '../mapi/CodePageReader';
 import { PropertyStreamReader } from '../mapi/PropertyStreamReader';
+import { DEFAULT_MAX_RESULT_BYTES } from '../api/options';
 
 export interface ICFBFReader {
     load(input: InputSource, options?: InputSourceOptions): Promise<void>;
@@ -21,12 +22,14 @@ export interface ICFBFReader {
     close(): Promise<void>;
     getTree(): DirectoryNode | null;
     getHeaderInfo(): HeaderInfo;
+    finishInput(): Promise<void>;
 }
 
 export class CFBFReader implements ICFBFReader {
     private tree: DirectoryNode | null = null;
     private headerInfo!: HeaderInfo;
     private input?: RandomAccessSource;
+    private maxResultBytes = DEFAULT_MAX_RESULT_BYTES;
     private readonly headerReader: HeaderReader;
     private readonly fatReader: FATReader;
     private readonly directoryReader: DirectoryReader;
@@ -39,6 +42,15 @@ export class CFBFReader implements ICFBFReader {
 
     async load(input: InputSource, options: InputSourceOptions = {}) {
         await this.close();
+        if (options.maxResultBytes !== undefined &&
+            (!Number.isSafeInteger(options.maxResultBytes) || options.maxResultBytes < 0)) {
+            throw new RangeError('maxResultBytes must be a non-negative safe integer');
+        }
+        if (options.maxDirectoryBytes !== undefined &&
+            (!Number.isSafeInteger(options.maxDirectoryBytes) || options.maxDirectoryBytes < 0)) {
+            throw new RangeError('maxDirectoryBytes must be a non-negative safe integer');
+        }
+        this.maxResultBytes = options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
         const { header, source } = await this.headerReader.readHeaderWithSource(input, options);
         this.input = source;
 
@@ -62,7 +74,9 @@ export class CFBFReader implements ICFBFReader {
             };
 
             await this.fatReader.buildTable(source, this.headerInfo);
-            await this.directoryReader.loadDirectory(source, this.headerInfo, options.maxDirectoryDepth);
+            await this.directoryReader.loadDirectory(
+                source, this.headerInfo, options.maxDirectoryDepth, options.maxDirectoryBytes,
+            );
 
             this.tree = this.directoryReader.getTree();
         } catch (error) {
@@ -76,6 +90,10 @@ export class CFBFReader implements ICFBFReader {
             throw new InvalidCfbfError('CFBF is not loaded or its directory tree is empty');
         }
 
+        const size = this.getStreamSize(path);
+        if (size !== null && size > this.maxResultBytes) {
+            throw new RangeError(`MSG result exceeds maxResultBytes (${this.maxResultBytes})`);
+        }
         return this.directoryReader.readStreamByPath(
             this.input,
             this.headerInfo,
@@ -91,7 +109,7 @@ export class CFBFReader implements ICFBFReader {
 
         switch (propertyType) {
             case 0x001F: // PT_UNICODE
-                return buffer.toString('utf16le').replace(/\0/g, '');
+                return buffer.toString('utf16le').replace(/\0+$/g, '');
             case 0x001E: // PT_STRING8
             {
                 const embeddedRootIndex = path.lastIndexOf('__substg1.0_3701000D');
@@ -104,7 +122,7 @@ export class CFBFReader implements ICFBFReader {
                     new PropertyStreamReader(this),
                     rootStorage,
                 ).getCodepage();
-                return new Decoder().decodeBytes(buffer, codepage).replace(/\0/g, '');
+                return new Decoder().decodeBytes(buffer, codepage).replace(/\0+$/g, '');
             }
             case 0x0102: // PT_BINARY
                 return buffer.toString('hex');
@@ -131,6 +149,10 @@ export class CFBFReader implements ICFBFReader {
 
     getHeaderInfo(): HeaderInfo {
         return this.headerInfo;
+    }
+
+    async finishInput(): Promise<void> {
+        await this.input?.finish?.();
     }
 
     async close(): Promise<void> {

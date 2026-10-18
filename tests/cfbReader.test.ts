@@ -23,10 +23,18 @@ describe('CFBFReader', () => {
     vi.spyOn(reader, 'readStream').mockImplementation(async (path) =>
       path[path.length - 1] === '__properties_version1.0'
         ? properties
-        : Buffer.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2, 0x00]));
+        : Buffer.from([0xcf, 0xf0, 0x00, 0xe8, 0xe2, 0xe5, 0xf2, 0x00]));
 
     await expect(reader.readStreamAsString(['Root Entry', '__substg1.0_0037001E'], 0x001E))
-      .resolves.toBe('Привет');
+      .resolves.toBe('Пр\0ивет');
+  });
+
+  it('preserves embedded NUL characters in PT_UNICODE strings', async () => {
+    const reader = new CFBFReader({} as HeaderReader, {} as FATReader, {} as DirectoryReader);
+    vi.spyOn(reader, 'readStream').mockResolvedValue(Buffer.from('A\0B\0', 'utf16le'));
+
+    await expect(reader.readStreamAsString(['Root Entry', '__substg1.0_0037001F'], 0x001F))
+      .resolves.toBe('A\0B');
   });
 
   it('uses an embedded message code page for its PT_STRING8 streams', async () => {
@@ -82,5 +90,31 @@ describe('CFBFReader', () => {
     await reader.close();
     expect(secondSource.close).toHaveBeenCalledTimes(1);
     expect(reader.getTree()).toBeNull();
+  });
+
+  it('rejects a declared stream larger than maxResultBytes before reading it', async () => {
+    const source = createSource();
+    const header = Buffer.alloc(512, 0xff);
+    header.writeUInt16LE(3, 0x1a);
+    header.writeUInt16LE(9, 0x1e);
+    header.writeUInt16LE(6, 0x20);
+    const tree = {} as DirectoryNode;
+    const readStreamByPath = vi.fn(async () => Buffer.alloc(10));
+    const reader = new CFBFReader(
+      { readHeaderWithSource: vi.fn(async () => ({ header, source })) } as unknown as HeaderReader,
+      { buildTable: vi.fn(async () => undefined) } as unknown as FATReader,
+      {
+        loadDirectory: vi.fn(async () => undefined),
+        getTree: vi.fn(() => tree),
+        findByPath: vi.fn(() => ({ streamSize: 10 })),
+        readStreamByPath,
+      } as unknown as DirectoryReader,
+    );
+    await reader.load(Buffer.alloc(0), { maxResultBytes: 9 });
+
+    await expect(reader.readStream(['Root Entry', 'large']))
+      .rejects.toThrow('MSG result exceeds maxResultBytes (9)');
+    expect(readStreamByPath).not.toHaveBeenCalled();
+    await reader.close();
   });
 });

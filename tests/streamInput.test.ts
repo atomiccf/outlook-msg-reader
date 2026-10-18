@@ -1,11 +1,10 @@
 import { Readable } from 'node:stream';
 import * as fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { parseMsg } from '../src';
-import { createRandomAccessSource } from '../src/cfb/InputSource';
-import { CFBFConstants } from '../src/constants/cfbf';
+import { createMsgReader, parseMsg } from '../src';
+import { createRandomAccessSource, DEFAULT_MAX_INPUT_BYTES } from '../src/cfb/InputSource';
+import * as constants from '../src/constants/cfbf';
 
-const constants = new CFBFConstants();
 
 function createEmptyMsg(): Buffer {
   const sectorSize = 512;
@@ -55,6 +54,41 @@ function chunk(input: Buffer, size: number): Buffer[] {
 }
 
 describe('Readable input', () => {
+  it('reads only the requested prefix even when a size limit is configured', async () => {
+    let release!: () => void;
+    const trailing = new Promise<void>((resolve) => { release = resolve; });
+    const stream = Readable.from((async function* () {
+      yield Buffer.from('header');
+      await trailing;
+      yield Buffer.from('trailing');
+    })());
+    const source = createRandomAccessSource(stream, fs, { maxInputBytes: 32 });
+    try {
+      await expect(source.read(0, 6)).resolves.toEqual(Buffer.from('header'));
+    } finally {
+      release();
+      await source.close();
+    }
+  });
+
+  it('loads an MSG without waiting for unread trailing stream data', async () => {
+    const input = createEmptyMsg();
+    let release!: () => void;
+    const trailing = new Promise<void>((resolve) => { release = resolve; });
+    const stream = Readable.from((async function* () {
+      yield input;
+      await trailing;
+      yield Buffer.alloc(1);
+    })());
+    try {
+      const reader = await createMsgReader(stream, { maxInputBytes: input.length + 1 });
+      await reader.close();
+    } finally {
+      release();
+      stream.destroy();
+    }
+  });
+
   it('parses an MSG stream split into small chunks', async () => {
     const input = createEmptyMsg();
     const stream = Readable.from(chunk(Buffer.concat([input, Buffer.alloc(1024 * 1024)]), 7));
@@ -77,6 +111,26 @@ describe('Readable input', () => {
     expect((await source.read(1, 4)).toString()).toBe('1234');
     expect((await source.read(14, 8)).toString()).toBe('ef');
     await source.close();
+  });
+
+  it('packs many one-byte chunks into a bounded number of memory blocks', async () => {
+    const count = 100_000;
+    const source = createRandomAccessSource(
+      Readable.from((function* () {
+        for (let index = 0; index < count; index++) yield Buffer.from([index & 0xff]);
+      })()),
+      fs,
+      { streamMemoryThreshold: count },
+    );
+    try {
+      expect(await source.read(count - 3, 3)).toEqual(Buffer.from([
+        (count - 3) & 0xff, (count - 2) & 0xff, (count - 1) & 0xff,
+      ]));
+      expect(await source.read(65_534, 4)).toEqual(Buffer.from([254, 255, 0, 1]));
+      expect((source as unknown as { chunks: Buffer[] }).chunks).toHaveLength(2);
+    } finally {
+      await source.close();
+    }
   });
 
   it('propagates errors from the input stream', async () => {
@@ -137,6 +191,20 @@ describe('Buffer input', () => {
 });
 
 describe('File input', () => {
+  it('applies the default input limit before opening a file', async () => {
+    const stat = vi.fn(async () => ({ size: DEFAULT_MAX_INPUT_BYTES + 1 }));
+    const open = vi.fn();
+    const source = createRandomAccessSource(
+      'message.msg',
+      { promises: { stat, open } } as unknown as typeof fs,
+    );
+
+    await expect(source.read(0, 1))
+      .rejects.toThrow(`File MSG input exceeds maxInputBytes (${DEFAULT_MAX_INPUT_BYTES})`);
+    expect(open).not.toHaveBeenCalled();
+    await source.close();
+  });
+
   it('rejects a file beyond the configured size limit before reading it', async () => {
     const stat = vi.fn(async () => ({ size: 9 }));
     const source = createRandomAccessSource(
@@ -152,6 +220,7 @@ describe('File input', () => {
 
   it('keeps one file handle open for the source lifetime', async () => {
     const input = Buffer.from('0123456789abcdef');
+    const stat = vi.fn(async () => ({ size: input.length }));
     const close = vi.fn(async () => undefined);
     const read = vi.fn(async (
       target: Buffer,
@@ -165,7 +234,7 @@ describe('File input', () => {
     const open = vi.fn(async () => ({ read, close }));
     const source = createRandomAccessSource(
       'message.msg',
-      { promises: { open } } as unknown as typeof fs,
+      { promises: { open, stat } } as unknown as typeof fs,
     );
 
     expect((await source.read(0, 4)).toString()).toBe('0123');

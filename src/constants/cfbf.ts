@@ -1,11 +1,9 @@
-export class CFBFConstants {
-    readonly CFBF_SIGNATURE = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-    readonly HEADER_SIZE = 512;
-    readonly DEFAULT_SECTOR_SIZE = 512;
-    readonly DEFAULT_MINI_SECTOR_SIZE = 64;
-    readonly END_OF_CHAIN = 0xFFFFFFFE;
-    readonly FREE_SECTOR = 0xFFFFFFFF;
-    readonly MAX_REGULAR_SECTOR = 0xFFFFFFFA;
-    readonly DIFAT_SECTOR = 0xFFFFFFFC;
-    readonly FAT_SECTOR = 0xFFFFFFFD;
-}
+export const CFBF_SIGNATURE = Object.freeze([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+export const HEADER_SIZE = 512;
+export const DEFAULT_SECTOR_SIZE = 512;
+export const DEFAULT_MINI_SECTOR_SIZE = 64;
+export const END_OF_CHAIN = 0xFFFFFFFE;
+export const FREE_SECTOR = 0xFFFFFFFF;
+export const MAX_REGULAR_SECTOR = 0xFFFFFFFA;
+export const DIFAT_SECTOR = 0xFFFFFFFC;
+export const FAT_SECTOR = 0xFFFFFFFD;

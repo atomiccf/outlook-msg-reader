@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type * as fs from 'node:fs';
 import { HeaderReader } from '../src/cfb/readers/headerReader';
-import { CFBFConstants } from '../src/constants/cfbf';
+import * as constants from '../src/constants/cfbf';
 import { InvalidCfbfError } from '../src/errors/errors';
 
-const constants = new CFBFConstants();
 
 function createHeader(majorVersion: 3 | 4 = 3): Buffer {
   const header = Buffer.alloc(constants.HEADER_SIZE);
@@ -22,7 +21,7 @@ function createHeader(majorVersion: 3 | 4 = 3): Buffer {
 }
 
 function createReader(): HeaderReader {
-  return new HeaderReader(constants, {} as typeof fs);
+  return new HeaderReader({} as typeof fs);
 }
 
 describe('CFBF header validation', () => {

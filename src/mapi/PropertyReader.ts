@@ -1,4 +1,5 @@
 import type { CFBFReader } from "../cfb/CFBReader";
+import { isUtf8 } from 'node:buffer';
 import type { Decoder } from '../encoding/decoder';
 import type { CodePageReader } from './CodePageReader';
 import { PropertyDecodeError } from '../errors/errors';
@@ -83,18 +84,31 @@ export class PropertyReader {
                 const result = buf.subarray(3).toString('utf8').replace(/\u0000+$/g, '').trim();
                 return result || undefined;
             }
-            // Try UTF-8 (most common for HTML in binary format)
-            const utf8Result = buf.toString('utf8').replace(/\u0000+$/g, '').trim();
-            // Validate UTF-8 - if it contains valid HTML-like content, use it
-            if (utf8Result && (utf8Result.includes('<') || utf8Result.length > 10)) {
+            // UTF-16LE without a BOM has zero high bytes for ordinary Latin text.
+            if (this.isLikelyUtf16Le(buf)) {
+                const utf16Result = buf.toString('utf16le').replace(/\u0000+$/g, '').trim();
+                return utf16Result || undefined;
+            }
+            if (isUtf8(buf)) {
+                const utf8Result = buf.toString('utf8').replace(/\u0000+$/g, '').trim();
                 return utf8Result || undefined;
             }
-            // Fallback to UTF-16LE (common in MSG files)
+            // Preserve the existing UTF-16LE fallback for non-UTF-8 binary strings.
             const utf16Result = buf.toString('utf16le').replace(/\u0000+$/g, '').trim();
             return utf16Result || undefined;
         } catch (error) {
             throw new PropertyDecodeError(`Unable to decode property at ${path.join(' / ')}`, error);
         }
+    }
+
+    private isLikelyUtf16Le(value: Buffer): boolean {
+        if (value.length < 2 || value.length % 2 !== 0) return false;
+        const pairs = value.length / 2;
+        let zeroHighBytes = 0;
+        for (let index = 1; index < value.length; index += 2) {
+            if (value[index] === 0) zeroHighBytes += 1;
+        }
+        return zeroHighBytes / pairs > 0.3;
     }
 
     /**

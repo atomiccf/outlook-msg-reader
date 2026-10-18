@@ -1,10 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import type * as fs from 'node:fs';
-import { CFBFConstants } from '../src/constants/cfbf';
+import { describe, expect, it, vi } from 'vitest';
+import * as constants from '../src/constants/cfbf';
 import { FATReader } from '../src/cfb/readers/fatReader';
 import type { HeaderInfo } from '../src/types';
 
-const constants = new CFBFConstants();
 const sectorSize = 512;
 
 function sectorOffset(sector: number): number {
@@ -37,7 +35,7 @@ function createInput(sectorCount = 4): Buffer {
 }
 
 async function createReader(input: Buffer): Promise<{ reader: FATReader; header: HeaderInfo }> {
-  const reader = new FATReader(constants);
+  const reader = new FATReader();
   const header = createHeaderInfo();
   await reader.buildTable(input, header);
   return { reader, header };
@@ -47,7 +45,7 @@ describe('FAT sector chains', () => {
   it('keeps the legacy fs constructor signature compatible', async () => {
     const input = createInput();
     input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(0) + 4);
-    const reader = new FATReader({} as typeof fs);
+    const reader = new FATReader();
     const header = createHeaderInfo();
 
     await reader.buildTable(input, header);
@@ -68,6 +66,18 @@ describe('FAT sector chains', () => {
     expect(chain).toHaveLength(sectorSize * 2);
     expect(chain[0]).toBe(0x11);
     expect(chain[sectorSize]).toBe(0x22);
+  });
+
+  it('stops an undeclared chain before buffering beyond the limit', async () => {
+    const input = createInput();
+    input.writeUInt32LE(2, sectorOffset(0) + 4);
+    input.writeUInt32LE(constants.END_OF_CHAIN, sectorOffset(0) + 8);
+    const { reader, header } = await createReader(input);
+    const readSector = vi.spyOn(reader, 'readSector');
+
+    await expect(reader.readChain(input, 1, header, undefined, sectorSize))
+      .rejects.toThrow(`CFBF chain exceeds maximum buffered bytes (${sectorSize})`);
+    expect(readSector).toHaveBeenCalledTimes(1);
   });
 
   it('rejects FREESECT inside a chain', async () => {

@@ -1,5 +1,4 @@
 import type * as fs from 'node:fs';
-import type { CFBFConstants } from '../constants/cfbf';
 import type { CFBFReader } from '../cfb/CFBReader';
 import type { DirectoryReader } from '../cfb/readers/directoryReader';
 import type { FATReader } from '../cfb/readers/fatReader';
@@ -14,7 +13,6 @@ import { createToken } from './service-locator';
 
 export const TOKENS = {
   fs: createToken<typeof fs>('fs'),
-  cfbfConstants: createToken<CFBFConstants>('cfbfConstants'),
   decoder: createToken<Decoder>('decoder'),
   logger: createToken<Logger>('logger'),
   headerReader: createToken<HeaderReader>('headerReader'),

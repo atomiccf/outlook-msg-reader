@@ -1,7 +1,7 @@
 import { HeaderInfo } from "../../types";
 import { FATReader } from './fatReader';
 import { parseUint32Array } from "../../utils/utils";
-import { CFBFConstants } from "../../constants/cfbf";
+import { END_OF_CHAIN, FREE_SECTOR, MAX_REGULAR_SECTOR } from "../../constants/cfbf";
 import type { Resolver } from '../../di/service-locator';
 import { TOKENS } from '../../di/tokens';
 import { CorruptedSectorChainError } from '../../errors/errors';
@@ -10,11 +10,9 @@ import type { RandomAccessInput } from '../InputSource';
 export class MiniFATReader {
     private miniFAT: number[] = [];
     private readonly fatReader: FATReader;
-    private readonly cfbConstants:CFBFConstants;
 
-    constructor( fatReader: FATReader, cfbConstants:CFBFConstants) {
+    constructor(fatReader: FATReader) {
         this.fatReader = fatReader;
-        this.cfbConstants = cfbConstants
     }
 
 
@@ -30,14 +28,14 @@ export class MiniFATReader {
         const visited = new Set<number>();
 
         if (sectorCount === 0) {
-            if (sector !== this.cfbConstants.END_OF_CHAIN) {
+            if (sector !== END_OF_CHAIN) {
                 throw new CorruptedSectorChainError(
                     `MiniFAT start sector is ${sector}, but the header declares no MiniFAT sectors`
                 );
             }
             return;
         }
-        if (sector === this.cfbConstants.END_OF_CHAIN || sector === this.cfbConstants.FREE_SECTOR) {
+        if (sector === END_OF_CHAIN || sector === FREE_SECTOR) {
             throw new CorruptedSectorChainError('MiniFAT chain is missing its first sector');
         }
 
@@ -84,11 +82,11 @@ export class MiniFATReader {
 
         const next = this.miniFAT[index];
 
-        if (next === this.cfbConstants.END_OF_CHAIN) return null;
-        if (next === this.cfbConstants.FREE_SECTOR) {
+        if (next === END_OF_CHAIN) return null;
+        if (next === FREE_SECTOR) {
             throw new CorruptedSectorChainError(`MiniFAT chain points to a free sector after sector ${index}`);
         }
-        if (!Number.isInteger(next) || next < 0 || next > this.cfbConstants.MAX_REGULAR_SECTOR) {
+        if (!Number.isInteger(next) || next < 0 || next > MAX_REGULAR_SECTOR) {
             throw new CorruptedSectorChainError(
                 `MiniFAT chain contains invalid marker 0x${next.toString(16).toUpperCase()} after sector ${index}`
             );
@@ -100,6 +98,5 @@ export class MiniFATReader {
 
 export function MiniFATReaderFactory(resolver: Resolver): MiniFATReader {
     const fatReader = resolver.get(TOKENS.fatReader);
-    const cfbConstants = resolver.get(TOKENS.cfbfConstants);
-    return new MiniFATReader(fatReader,cfbConstants);
+    return new MiniFATReader(fatReader);
 }

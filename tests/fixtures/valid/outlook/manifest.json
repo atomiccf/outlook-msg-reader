@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "generator": "scripts/MsgFixtureGenerator and scripts/generate-outlook-fixtures.ps1",
+  "fixtures": [
+    {
+      "id": "plain-basic-unicode",
+      "file": "plain-basic-unicode.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "2f7a2d0160521a6f14130b1939c8b7f22c7be2cec40ae4de7997768f37200124",
+      "expected": {
+        "subject": "Basic plain message",
+        "textContains": "Simple message body."
+      }
+    },
+    {
+      "id": "unicode-polish-russian",
+      "file": "unicode-polish-russian.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "1cc384afce4112e3d13d904dc0be0cdc9d150d9a211b9b5e4dc874b745569520",
+      "expected": {
+        "subject": "Za\u017C\u00F3\u0142\u0107 g\u0119\u015Bl\u0105 ja\u017A\u0144 \u2014 \u0422\u0435\u0441\u0442\u043E\u0432\u043E\u0435 \u043F\u0438\u0441\u044C\u043C\u043E",
+        "toCount": 1,
+        "ccCount": 1,
+        "bccCount": 1
+      }
+    },
+    {
+      "id": "html-unicode",
+      "file": "html-unicode.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "html",
+      "sha256": "1e75c11d35072ca4f553a43af56de3d7c65a299b865957e128023f79ab4502fe",
+      "expected": {
+        "subject": "HTML message",
+        "htmlContains": "\u003Ch1\u003EHTML test\u003C/h1\u003E"
+      }
+    },
+    {
+      "id": "rtf-unicode",
+      "file": "rtf-unicode.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "rtf",
+      "sha256": "3296b79f8374eaf8f6c902ba932f04333482bce90a68ef9d7182c20464d6ba1d",
+      "expected": {
+        "subject": "RTF message",
+        "rtfPresent": true
+      }
+    },
+    {
+      "id": "empty-unicode",
+      "file": "empty-unicode.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "eebdc5536d1d099e4f67e7025b68aa6c5de547ebc59085cf338b4874fa0fea87",
+      "expected": {
+        "subject": "",
+        "attachmentCount": 0
+      }
+    },
+    {
+      "id": "small-attachment",
+      "file": "small-attachment.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "1b5c097c54f1ef980fd5f496df7ccb4edaa330231804aba719243f48be946caa",
+      "expected": {
+        "subject": "Small attachment",
+        "attachmentCount": 1,
+        "attachmentNames": [
+          "unicode-text.txt"
+        ]
+      }
+    },
+    {
+      "id": "large-attachment",
+      "file": "large-attachment.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "34b0c633db96a6e4ae2a072cb694354fb42dad3a8681678342db05831b7c62d6",
+      "expected": {
+        "subject": "Large attachment",
+        "attachmentCount": 1,
+        "attachmentNames": [
+          "large-binary.bin"
+        ]
+      }
+    },
+    {
+      "id": "ansi-polish",
+      "file": "ansi-polish.msg",
+      "producer": "Microsoft Outlook (classic)",
+      "msgFormat": "ansi",
+      "bodyFormat": "plain",
+      "sha256": "b6add81a89c0f33b6777ba8420f5d9223ce47ed52aaf85856d68aa9cf6641f12",
+      "expected": {
+        "subjectContains": "ANSI",
+        "textContains": "Polski tekst w formacie MSG ANSI."
+      }
+    },
+    {
+      "id": "ansi-russian",
+      "file": "ansi-russian.msg",
+      "producer": "Microsoft Outlook (classic)",
+      "msgFormat": "ansi",
+      "bodyFormat": "plain",
+      "sha256": "9a8ec0e82b6b0fa71d8a3f6fb2fdefb44085a362cab2faee54e0ac3bbed47c56",
+      "expected": {
+        "subjectContains": "ANSI"
+      }
+    },
+    {
+      "id": "multiple-attachments",
+      "file": "multiple-attachments.msg",
+      "producer": "MsgKit 3.0.5",
+      "msgFormat": "unicode",
+      "bodyFormat": "html",
+      "sha256": "6fc54a3fb4fef2a4290911afbe8dfeac15d02e0fac850ef49a6a6c2f5cc3091b",
+      "expected": {
+        "subject": "Multiple attachments",
+        "attachmentCount": 2
+      }
+    },
+    {
+      "id": "embedded-message",
+      "file": "embedded-message.msg",
+      "producer": "Microsoft Outlook (classic)",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "9e34c24febf5b85d0d5107f51ffafb73e562bd4c4803c2cafafb923dfd78a792",
+      "expected": {
+        "subject": "Parent with embedded message",
+        "attachmentCount": 1,
+        "attachmentKinds": ["embedded-message"]
+      }
+    }
+  ]
+}
