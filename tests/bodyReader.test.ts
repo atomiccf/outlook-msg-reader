@@ -107,6 +107,24 @@ describe('BodyReader', () => {
 });
 
 describe('BodyReader HTML fallback', () => {
+  it.each([
+    ['<p>Hello<br />world</p><div>Next</div>', 'Hello\nworld\nNext'],
+    ['before<script>x</script><STYLE>y</STYLE><head>z</head>after', 'beforeafter'],
+    ['before<script>keep<style>hide</style>after', 'before keepafter'],
+    ['before<>after <<tag> end <unfinished', 'before<>after end <unfinished'],
+    ['&lt;p&gt;&#65;&#x1F600;&nbsp;&quot;&apos;', '<p>A😀 "\''],
+  ])('preserves HTML fallback behavior for %s', async (html, text) => {
+    expect(await createHtmlReader(html).read()).toEqual({ html, text });
+  });
+
+  it.each([
+    ['unclosed angle brackets', '<'.repeat(256_000), '<'.repeat(256_000)],
+    ['unclosed script sections', '<script>'.repeat(32_000), ''],
+    ['unclosed script tags', '<script '.repeat(32_000), '<script '.repeat(32_000).trim()],
+  ])('handles large input with %s', async (_name, html, text) => {
+    expect(await createHtmlReader(html).read()).toEqual({ html, text });
+  }, 2_000);
+
   it.each([4096, 4097])('decodes HTML with %i trailing padding bytes', async (paddingBytes) => {
     const html = '<html><body><p>Test email body.</p></body></html>';
     const bytes = Buffer.concat([Buffer.from(html), Buffer.alloc(paddingBytes)]);

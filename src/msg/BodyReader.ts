@@ -94,11 +94,9 @@ export class BodyReader {
   }
 
   private htmlToText(html: string): string {
-    const withoutMarkup = html
-      .replace(/<(script|style|head)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    const withoutMarkup = this.stripHtmlTags(this.removeHtmlSections(html)
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/(address|article|blockquote|div|footer|h[1-6]|header|li|main|p|pre|section|table|tr)>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
+      .replace(/<\/(address|article|blockquote|div|footer|h[1-6]|header|li|main|p|pre|section|table|tr)>/gi, '\n'))
       .replace(/&#(x[0-9a-f]+|\d+);/gi, (_match, code: string) => {
         const value = code[0].toLowerCase() === 'x'
           ? Number.parseInt(code.slice(1), 16)
@@ -124,6 +122,58 @@ export class BodyReader {
       .map((line) => line.replace(/[\t ]+/g, ' ').trim())
       .filter(Boolean)
       .join('\n');
+  }
+
+  private removeHtmlSections(html: string): string {
+    const opening = /<(script|style|head)\b/gi;
+    const closing: Record<string, RegExp> = {
+      script: /<\/script>/gi,
+      style: /<\/style>/gi,
+      head: /<\/head>/gi,
+    };
+    const unclosed = new Set<string>();
+    const parts: string[] = [];
+    let position = 0;
+    let tagEnd = -1;
+    let match: RegExpExecArray | null;
+    while ((match = opening.exec(html)) !== null) {
+      const name = match[1].toLowerCase();
+      // Each closing-tag search advances, or is exhausted once per tag name.
+      if (unclosed.has(name)) continue;
+      if (tagEnd < opening.lastIndex) tagEnd = html.indexOf('>', opening.lastIndex);
+      if (tagEnd === -1) break;
+      const end = closing[name];
+      end.lastIndex = tagEnd + 1;
+      if (!end.exec(html)) {
+        unclosed.add(name);
+        continue;
+      }
+      parts.push(html.slice(position, match.index));
+      position = end.lastIndex;
+      opening.lastIndex = position;
+    }
+    parts.push(html.slice(position));
+    return parts.join('');
+  }
+
+  private stripHtmlTags(html: string): string {
+    const parts: string[] = [];
+    let position = 0;
+    let start = html.indexOf('<');
+    while (start !== -1) {
+      // Like <[^>]+>, keep literal <> pairs and an unclosed trailing tag.
+      if (html[start + 1] === '>') {
+        start = html.indexOf('<', start + 2);
+        continue;
+      }
+      const end = html.indexOf('>', start + 1);
+      if (end === -1) break;
+      parts.push(html.slice(position, start), ' ');
+      position = end + 1;
+      start = html.indexOf('<', position);
+    }
+    parts.push(html.slice(position));
+    return parts.join('');
   }
 
   private isBody(value: string): boolean {

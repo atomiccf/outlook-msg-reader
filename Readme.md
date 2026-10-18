@@ -53,4 +53,8 @@ try {
 
 Both APIs accept optional limits such as `maxInputBytes`, `maxAttachmentBytes`, `maxAttachments`, `maxResultBytes`, and `maxEmbeddedMessageDepth`. Stream input moves to a temporary file after 8 MiB by default. Parsing and decoding errors extend `MsgError`.
 
+These limits do not provide a timeout or cancellation: a stream that never ends can keep a read pending. `maxResultBytes` limits the returned data, not peak memory use; for example, RTF is decompressed before the remaining result budget is checked. Use `maxRtfBytes` to limit decompressed RTF separately.
+
+Returned HTML is not sanitized. Applications must render it safely. For untrusted messages, consider isolating parsing in a worker or process with application-managed time and memory limits.
+
 Run `npm test` to check the MSG fixtures, including Outlook classic ANSI and embedded-message samples.
