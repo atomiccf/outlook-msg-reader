@@ -4,6 +4,7 @@ import type { MsgBody } from '../types';
 import { decompressRtf } from '../rtf/decompressRtf';
 import type { Decoder } from '../encoding/decoder';
 import type { CodePageReader } from '../mapi/CodePageReader';
+import { trimNullPadding } from '../utils/utils';
 
 export class BodyReader {
   constructor(
@@ -49,7 +50,8 @@ export class BodyReader {
     const rtf = await this.properties.read(['1009'], { preferBinary: true });
     if (Buffer.isBuffer(rtf) && rtf.length) {
       try {
-        body.rtf = decompressRtf(rtf, maxRtfBytes);
+        body.rtf = decompressRtf(rtf, maxRtfBytes,
+          maxResultBytes === undefined ? undefined : maxResultBytes - usedBytes);
         charge(body.rtf);
       } catch (error) {
         if (error instanceof RangeError) throw error;
@@ -61,7 +63,7 @@ export class BodyReader {
 
   private async decodeHtml(value: Buffer): Promise<string> {
     if (value.length >= 2 && value[0] === 0xff && value[1] === 0xfe) {
-      return value.subarray(2).toString('utf16le').replace(/\u0000+$/g, '');
+      return trimNullPadding(value.subarray(2).toString('utf16le'));
     }
     if (value.length >= 2 && value[0] === 0xfe && value[1] === 0xff) {
       const converted = Buffer.alloc(value.length - 2);
@@ -69,16 +71,16 @@ export class BodyReader {
         converted[index - 2] = value[index + 1];
         converted[index - 1] = value[index];
       }
-      return converted.toString('utf16le').replace(/\u0000+$/g, '');
+      return trimNullPadding(converted.toString('utf16le'));
     }
     if (value.length >= 3 && value[0] === 0xef && value[1] === 0xbb && value[2] === 0xbf) {
-      return value.subarray(3).toString('utf8').replace(/\u0000+$/g, '');
+      return trimNullPadding(value.subarray(3).toString('utf8'));
     }
     if (this.isLikelyUtf16Le(value)) {
-      return value.toString('utf16le').replace(/\u0000+$/g, '');
+      return trimNullPadding(value.toString('utf16le'));
     }
     const codepage = await this.codePageReader.getCodepage();
-    return this.decoder.decodeBytes(value, codepage).replace(/\u0000+$/g, '');
+    return trimNullPadding(this.decoder.decodeBytes(value, codepage));
   }
 
   private isLikelyUtf16Le(value: Buffer): boolean {

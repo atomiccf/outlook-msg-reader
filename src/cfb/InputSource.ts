@@ -8,6 +8,8 @@ export type InputSource = string | Buffer | Readable;
 export const DEFAULT_MAX_INPUT_BYTES = 512 * 1024 * 1024;
 
 export interface InputSourceOptions {
+    /** Cancels input reads, destroys Readable input, and removes temporary files. */
+    signal?: AbortSignal;
     /** Maximum size of a Buffer, file, or complete Readable input. Defaults to 512 MiB. */
     maxInputBytes?: number;
     /** Bytes retained in memory before a Readable input spills to a temporary file. */
@@ -67,6 +69,7 @@ class FileSource implements RandomAccessSource {
             }
             this.sizeChecked = true;
         }
+        if (this.closed) throw new Error('Cannot read from a closed MSG input');
         if (length === 0) return Buffer.alloc(0);
 
         const handle = await this.getHandle();
@@ -105,6 +108,8 @@ class ReadableSource implements RandomAccessSource {
     private tempHandle?: fs.promises.FileHandle;
     private readonly memoryThreshold: number;
     private readonly maxInputBytes?: number;
+    private readonly stopped = new AbortController();
+    private closing?: Promise<void>;
 
     constructor(
         input: Readable,
@@ -122,6 +127,7 @@ class ReadableSource implements RandomAccessSource {
     private readonly input: Readable;
 
     async read(offset: number, length: number): Promise<Buffer> {
+        this.stopped.signal.throwIfAborted();
         validateRange(offset, length);
         if (length === 0) return Buffer.alloc(0);
 
@@ -163,9 +169,16 @@ class ReadableSource implements RandomAccessSource {
         await this.ensureBuffered(Number.POSITIVE_INFINITY);
     }
 
-    async close(): Promise<void> {
+    close(): Promise<void> {
+        return this.closing ??= this.cleanup();
+    }
+
+    private async cleanup(): Promise<void> {
         this.ended = true;
+        this.stopped.abort();
         if (!this.input.destroyed) this.input.destroy();
+        // Let an in-progress spill/write finish before closing its handle and removing its directory.
+        await this.fillQueue;
         if (this.tempHandle) {
             await this.tempHandle.close();
             this.tempHandle = undefined;
@@ -174,6 +187,7 @@ class ReadableSource implements RandomAccessSource {
             await this.fsModule.promises.rm(this.tempDirectory, { recursive: true, force: true });
             this.tempDirectory = undefined;
         }
+        this.chunks.length = 0;
     }
 
     private async ensureBuffered(targetLength: number): Promise<void> {
@@ -182,7 +196,8 @@ class ReadableSource implements RandomAccessSource {
 
             try {
                 while (!this.ended && this.bufferedLength < targetLength) {
-                    const next = await this.iterator.next();
+                    this.stopped.signal.throwIfAborted();
+                    const next = await waitWithSignal(this.iterator.next(), this.stopped.signal);
                     if (next.done) {
                         this.ended = true;
                         break;
@@ -251,10 +266,66 @@ export function createRandomAccessSource(
         if (input.length > maxInputBytes) {
             throw new RangeError(`Buffer MSG input exceeds maxInputBytes (${maxInputBytes})`);
         }
-        return new BufferSource(input);
+        return withSignal(new BufferSource(input), options.signal);
     }
-    if (typeof input === 'string') return new FileSource(input, fsModule, maxInputBytes);
-    return new ReadableSource(input, fsModule, { ...options, maxInputBytes });
+    if (typeof input === 'string') return withSignal(new FileSource(input, fsModule, maxInputBytes), options.signal);
+    return withSignal(new ReadableSource(input, fsModule, { ...options, maxInputBytes }), options.signal);
+}
+
+/** Race explicitly: destroying a Readable cannot unblock every custom async iterator. */
+async function waitWithSignal<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+    let onAbort!: () => void;
+    const aborted = new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(signal.reason);
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+        return await Promise.race([operation, aborted]);
+    } finally {
+        signal.removeEventListener('abort', onAbort);
+    }
+}
+
+function withSignal(source: RandomAccessSource, signal?: AbortSignal): RandomAccessSource {
+    return signal ? new AbortableSource(source, signal) : source;
+}
+
+class AbortableSource implements RandomAccessSource {
+    private closing?: Promise<void>;
+    private readonly onAbort = (): void => { void this.close().catch(() => undefined); };
+
+    constructor(private readonly source: RandomAccessSource, private readonly signal: AbortSignal) {
+        signal.addEventListener('abort', this.onAbort, { once: true });
+        if (signal.aborted) this.onAbort();
+    }
+
+    async read(offset: number, length: number): Promise<Buffer> {
+        return this.run(() => this.source.read(offset, length));
+    }
+
+    async finish(): Promise<void> {
+        await this.run(() => this.source.finish?.() ?? Promise.resolve());
+    }
+
+    close(): Promise<void> {
+        this.signal.removeEventListener('abort', this.onAbort);
+        return this.closing ??= this.source.close();
+    }
+
+    private async run<T>(operation: () => Promise<T>): Promise<T> {
+        try {
+            this.signal.throwIfAborted();
+            if (this.closing) throw new Error('Cannot read from a closed MSG input');
+            return await waitWithSignal(operation(), this.signal);
+        } catch (error) {
+            if (this.signal.aborted) {
+                await this.close();
+                throw this.signal.reason;
+            }
+            throw error;
+        }
+    }
 }
 
 function validateRange(offset: number, length: number): void {

@@ -17,7 +17,8 @@ export interface PropertyReadOptions {
 }
 
 export class PropertyStore {
-  private readonly locations = new Map<string, PropertyLocation[]>();
+  private readonly locations = new Map<string, Map<string, PropertyLocation[]>>();
+  private readonly nodesByPath = new Map<string, DirectoryNode>();
   private namedPropertiesInitialization?: Promise<void>;
 
   constructor(
@@ -31,14 +32,8 @@ export class PropertyStore {
   }
 
   findStorages(prefix: string, storagePath: string[] = this.rootStorage): string[][] {
-    const tree = this.cfbReader.getTree();
-    if (!tree) return [];
-    let parent: DirectoryNode | undefined = tree;
-    const startIndex = storagePath[0] === tree.name ? 1 : 0;
-    for (let index = startIndex; index < storagePath.length; index++) {
-      parent = parent.children.find(child => child.name === storagePath[index]);
-      if (!parent) return [];
-    }
+    const parent = this.nodesByPath.get(this.storageKey(storagePath));
+    if (!parent) return [];
     return parent.children
       .filter(child => child.name.startsWith(prefix))
       .map(child => [...storagePath, child.name]);
@@ -62,10 +57,9 @@ export class PropertyStore {
     options: PropertyReadOptions,
     stringsOnly: boolean,
   ): Promise<string | Buffer | undefined> {
-    const normalizedStorage = storagePath.join('\u0000');
+    const storage = this.locations.get(this.storageKey(storagePath));
     for (const id of ids) {
-      const candidates = (this.locations.get(this.normalizeId(id)) ?? [])
-        .filter((location) => location.path.slice(0, -1).join('\u0000') === normalizedStorage);
+      const candidates = storage?.get(this.normalizeId(id)) ?? [];
       const value = await this.readLocations(candidates, options, stringsOnly);
       if (value !== undefined) return value;
     }
@@ -105,6 +99,7 @@ export class PropertyStore {
     while (stack.length > 0) {
       const current = stack.pop()!;
       const path = [...current.parent, current.node.name];
+      this.nodesByPath.set(path.join('\u0000'), current.node);
       const match = /^__substg1\.0_([0-9a-f]{4})([0-9a-f]{4})$/i.exec(current.node.name);
       if (current.node.type === 0x02 && match) {
         const location: PropertyLocation = {
@@ -112,9 +107,12 @@ export class PropertyStore {
           type: match[2].toUpperCase(),
           path,
         };
-        const existing = this.locations.get(location.id) ?? [];
+        const storageKey = current.parent.join('\u0000');
+        let storage = this.locations.get(storageKey);
+        if (!storage) this.locations.set(storageKey, storage = new Map());
+        const existing = storage.get(location.id) ?? [];
         existing.push(location);
-        this.locations.set(location.id, existing);
+        storage.set(location.id, existing);
       }
       for (let index = current.node.children.length - 1; index >= 0; index -= 1) {
         stack.push({ node: current.node.children[index], parent: path });
@@ -159,5 +157,10 @@ export class PropertyStore {
 
   private normalizeId(id: string): string {
     return id.toUpperCase().padStart(4, '0');
+  }
+
+  private storageKey(path: string[]): string {
+    const rootName = this.cfbReader.getTree()?.name;
+    return (rootName && path[0] !== rootName ? [rootName, ...path] : path).join('\u0000');
   }
 }

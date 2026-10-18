@@ -1,6 +1,6 @@
 import { MsgReader } from './msg/MsgReader';
 import type { Msg } from './types';
-import { createScopedMsgReader } from './api/createMsgReader';
+import { createScopedMsgSession } from './api/createMsgReader';
 import type { InputSource } from './cfb/InputSource';
 import type { MsgReaderOptions } from './api/options';
 
@@ -19,10 +19,10 @@ import type { MsgReaderOptions } from './api/options';
  * @returns Parsed message object
  */
 export async function parseMsg(input: InputSource, options: MsgReaderOptions = {}): Promise<Msg> {
-    const reader = await createScopedMsgReader(input, options);
+    const { reader, cfbReader } = await createScopedMsgSession(input, options);
     try {
         const message = await reader.parse();
-        await reader.getCFBReader().finishInput();
+        await cfbReader.finishInput();
         return message;
     } finally {
         await reader.close();
@@ -47,7 +47,7 @@ export async function createMsgReader(
     input: InputSource,
     options: MsgReaderOptions = {},
 ): Promise<MsgReader> {
-    return createScopedMsgReader(input, options);
+    return (await createScopedMsgSession(input, options)).reader;
 }
 
 // Export classes for maximum flexibility

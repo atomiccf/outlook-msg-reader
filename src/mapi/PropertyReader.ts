@@ -1,3 +1,4 @@
+import { trimNullPadding } from '../utils/utils';
 import type { CFBFReader } from "../cfb/CFBReader";
 import { isUtf8 } from 'node:buffer';
 import type { Decoder } from '../encoding/decoder';
@@ -40,12 +41,12 @@ export class PropertyReader {
             let result = buf.toString("utf16le");
             // удалить BOM, если есть
             if (result.charCodeAt(0) === 0xFEFF) result = result.slice(1);
-            return result.replace(/\u0000+$/g, '') || undefined;
+            return trimNullPadding(result) || undefined;
         }
 
         // Для ANSI всегда использовать кодовую страницу
         const codepage = await this.codePageReader.getCodepage();
-        const result = this.decoder.decodeBytes(buf, codepage).replace(/\u0000+$/g, '');
+        const result = trimNullPadding(this.decoder.decodeBytes(buf, codepage));
         return result || undefined;
     }
 
@@ -63,7 +64,7 @@ export class PropertyReader {
         try {
             // Check for UTF-16 LE BOM (0xFF 0xFE)
             if (buf.length >= 2 && buf[0] === 0xFF && buf[1] === 0xFE) {
-                const result = buf.subarray(2).toString('utf16le').replace(/\u0000+$/g, '').trim();
+                const result = trimNullPadding(buf.subarray(2).toString('utf16le')).trim();
                 return result || undefined;
             }
             // Check for UTF-16 BE BOM (0xFE 0xFF)
@@ -76,25 +77,25 @@ export class PropertyReader {
                         leBuf[i - 1] = buf[i];
                     }
                 }
-                const result = leBuf.toString('utf16le').replace(/\u0000+$/g, '').trim();
+                const result = trimNullPadding(leBuf.toString('utf16le')).trim();
                 return result || undefined;
             }
             // Check for UTF-8 BOM (0xEF 0xBB 0xBF)
             if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) {
-                const result = buf.subarray(3).toString('utf8').replace(/\u0000+$/g, '').trim();
+                const result = trimNullPadding(buf.subarray(3).toString('utf8')).trim();
                 return result || undefined;
             }
             // UTF-16LE without a BOM has zero high bytes for ordinary Latin text.
             if (this.isLikelyUtf16Le(buf)) {
-                const utf16Result = buf.toString('utf16le').replace(/\u0000+$/g, '').trim();
+                const utf16Result = trimNullPadding(buf.toString('utf16le')).trim();
                 return utf16Result || undefined;
             }
             if (isUtf8(buf)) {
-                const utf8Result = buf.toString('utf8').replace(/\u0000+$/g, '').trim();
+                const utf8Result = trimNullPadding(buf.toString('utf8')).trim();
                 return utf8Result || undefined;
             }
             // Preserve the existing UTF-16LE fallback for non-UTF-8 binary strings.
-            const utf16Result = buf.toString('utf16le').replace(/\u0000+$/g, '').trim();
+            const utf16Result = trimNullPadding(buf.toString('utf16le')).trim();
             return utf16Result || undefined;
         } catch (error) {
             throw new PropertyDecodeError(`Unable to decode property at ${path.join(' / ')}`, error);

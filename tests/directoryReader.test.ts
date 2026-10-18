@@ -79,6 +79,20 @@ function version3Header(): HeaderInfo {
 }
 
 describe('CFBF directory validation', () => {
+  it('indexes paths with and without the root and refreshes them after reload', () => {
+    const reader = createReader();
+    reader.parseDirectoryEntries(createDirectory());
+    reader.buildDirectoryTree();
+    expect(reader.findByPath(['Root Entry', 'second'])?.name).toBe('second');
+    expect(reader.findByPath(['second'])?.name).toBe('second');
+    const next = createDirectory();
+    writeEntry(next, 2, { name: 'replacement', type: DirectoryEntryType.Stream });
+    reader.parseDirectoryEntries(next);
+    reader.buildDirectoryTree();
+    expect(reader.findByPath(['second'])).toBeNull();
+    expect(reader.findByPath(['replacement'])?.name).toBe('replacement');
+  });
+
   it('does not read a storage node as a stream', async () => {
     const buffer = createDirectory();
     buffer.writeUInt8(DirectoryEntryType.Storage, 128 + 0x42);

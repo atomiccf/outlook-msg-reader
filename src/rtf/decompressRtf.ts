@@ -10,10 +10,9 @@ const INITIAL_DICTIONARY = Buffer.from(
   'ascii',
 );
 
-function decodeRtf(bytes: Buffer): string {
+function decodeRtf(bytes: Buffer, maxTextBytes?: number): string {
   const preserved = bytes.toString('latin1');
   const codePage = /\\ansicpg(\d+)(?!\d)/.exec(preserved)?.[1];
-  if (!codePage) return preserved;
 
   const otherEncodings: Record<string, string> = {
     '65001': 'utf-8',
@@ -21,19 +20,43 @@ function decodeRtf(bytes: Buffer): string {
     '20866': 'koi8-r',
     '20127': 'us-ascii',
   };
-  const encoding = otherEncodings[codePage] ?? `windows-${codePage}`;
-  try {
-    return new TextDecoder(encoding).decode(bytes);
-  } catch (error) {
-    if (error instanceof RangeError) return preserved;
-    throw error;
+  let decoder: TextDecoder | undefined;
+  if (codePage) {
+    const encoding = otherEncodings[codePage] ?? `windows-${codePage}`;
+    try {
+      decoder = new TextDecoder(encoding);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+    }
   }
+  const parts: string[] = [];
+  let textBytes = 0;
+  const append = (text: string): void => {
+    textBytes += Buffer.byteLength(text);
+    if (maxTextBytes !== undefined && textBytes > maxTextBytes) {
+      throw new RangeError(`RTF text exceeds remaining maxResultBytes (${maxTextBytes})`);
+    }
+    parts.push(text);
+  };
+  for (let offset = 0; offset < bytes.length; offset += 4096) {
+    const chunk = bytes.subarray(offset, offset + 4096);
+    append(decoder ? decoder.decode(chunk, { stream: true }) : chunk.toString('latin1'));
+  }
+  if (decoder) append(decoder.decode());
+  return parts.join('');
 }
 
 /** Decompresses PidTagRtfCompressed according to MS-OXRTFCP. */
-export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_RTF_BYTES): string {
+export function decompressRtf(
+  input: Buffer,
+  maxRtfBytes: number = DEFAULT_MAX_RTF_BYTES,
+  maxTextBytes?: number,
+): string {
   if (!Number.isSafeInteger(maxRtfBytes) || maxRtfBytes < 0) {
     throw new RangeError('maxRtfBytes must be a non-negative safe integer');
+  }
+  if (maxTextBytes !== undefined && (!Number.isSafeInteger(maxTextBytes) || maxTextBytes < 0)) {
+    throw new RangeError('maxTextBytes must be a non-negative safe integer');
   }
   if (input.length < 16) throw new PropertyDecodeError('Compressed RTF header is truncated');
 
@@ -44,10 +67,13 @@ export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_R
   if (rawSize > maxRtfBytes) {
     throw new RangeError(`RTF body exceeds maxRtfBytes (${maxRtfBytes})`);
   }
+  if (maxTextBytes !== undefined && rawSize > maxTextBytes) {
+    throw new RangeError(`RTF body exceeds remaining maxResultBytes (${maxTextBytes})`);
+  }
 
   if (magic === UNCOMPRESSED_MAGIC) {
     if (16 + rawSize > input.length) throw new PropertyDecodeError('Uncompressed RTF body is truncated');
-    return decodeRtf(input.subarray(16, 16 + rawSize));
+    return decodeRtf(input.subarray(16, 16 + rawSize), maxTextBytes);
   }
   if (magic !== COMPRESSED_MAGIC) throw new PropertyDecodeError('Unknown compressed RTF signature');
 
@@ -74,7 +100,7 @@ export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_R
       const second = input[inputOffset++];
       let referenceOffset = (first << 4) | (second >> 4);
       const length = (second & 0x0f) + 2;
-      if (referenceOffset === dictionaryOffset) return decodeRtf(output.subarray(0, outputOffset));
+      if (referenceOffset === dictionaryOffset) return decodeRtf(output.subarray(0, outputOffset), maxTextBytes);
 
       for (let index = 0; index < length && outputOffset < rawSize; index += 1) {
         const value = dictionary[referenceOffset];
@@ -87,5 +113,5 @@ export function decompressRtf(input: Buffer, maxRtfBytes: number = DEFAULT_MAX_R
   }
 
   if (outputOffset !== rawSize) throw new PropertyDecodeError(`Compressed RTF ended at ${outputOffset} of ${rawSize} bytes`);
-  return decodeRtf(output);
+  return decodeRtf(output, maxTextBytes);
 }

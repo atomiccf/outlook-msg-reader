@@ -7,6 +7,60 @@ import { RecipientReader } from '../src/msg/RecipientReader';
 import { SenderReader } from '../src/msg/SenderReader';
 
 describe('address readers', () => {
+  function displayReader(values: Record<string, string> = {}) {
+    const properties = {
+      findStorages: () => [],
+      readString: vi.fn(async (ids: string[]) => values[ids[0]]),
+    } as unknown as PropertyStore;
+    return new RecipientReader(properties, {} as PropertyStreamReader, { warn: vi.fn() } as unknown as Logger);
+  }
+
+  it('parses display delimiters without backtracking on repeated opening brackets', async () => {
+    const value = '<'.repeat(32_000);
+    const start = performance.now();
+    await expect(displayReader({ '0E04': value }).read()).resolves.toEqual({ to: [{ name: value, email: '' }] });
+    expect(performance.now() - start).toBeLessThan(1000);
+    await expect(displayReader({ '0E04': 'Name <a<b>; <<x>; bare@example.test; Display' }).read())
+      .resolves.toEqual({ to: [
+        { name: 'Name', email: 'a<b' }, { name: '<', email: 'x' },
+        { name: '', email: 'bare@example.test' }, { name: 'Display', email: '' },
+      ] });
+  });
+
+  it('counts display recipients across To, Cc and Bcc', async () => {
+    const reader = displayReader({ '0E04': 'A; B', '0E03': 'C', '0E02': 'D' });
+    await expect(reader.read(3)).rejects.toThrow('maxRecipients (3)');
+    await expect(reader.read(4)).resolves.toMatchObject({ bcc: [{ name: 'D', email: '' }] });
+    await expect(displayReader({ '0E04': 'A' }).read(0)).rejects.toThrow('maxRecipients (0)');
+  });
+
+  it('preserves folded whitespace before an address delimiter', async () => {
+    await expect(displayReader({ '0E04': 'Name\r\n <address>; a<\n<b>; a\nb<c>' }).read())
+      .resolves.toEqual({ to: [
+        { name: 'Name', email: 'address' }, { name: 'a<', email: 'b' }, { name: 'a\nb<c>', email: '' },
+      ] });
+  });
+
+  it('rejects too many recipient storages before reading their properties', async () => {
+    const readNumber = vi.fn();
+    const properties = { findStorages: () => [['a'], ['b']] } as unknown as PropertyStore;
+    const reader = new RecipientReader(properties, { readNumber } as unknown as PropertyStreamReader,
+      { warn: vi.fn() } as unknown as Logger);
+    await expect(reader.read(1)).rejects.toThrow('maxRecipients (1)');
+    expect(readNumber).not.toHaveBeenCalled();
+  });
+
+  it('checks UTF-8 budget before reading the next recipient property', async () => {
+    const readStringAt = vi.fn(async () => 'Я');
+    const properties = { findStorages: () => [['a'], ['b']], readStringAt } as unknown as PropertyStore;
+    const reader = new RecipientReader(properties,
+      { readNumber: async () => 1 } as unknown as PropertyStreamReader, { warn: vi.fn() } as unknown as Logger);
+    await expect(reader.read(2, 4, 3)).rejects.toThrow('maxResultBytes (4)');
+    expect(readStringAt).toHaveBeenCalledTimes(1);
+    await expect(displayReader({ '0E04': 'Я; Ю' }).read(2, 4)).resolves.toMatchObject({ to: [{ name: 'Я' }, { name: 'Ю' }] });
+    await expect(displayReader({ '0E04': 'Я; Ю' }).read(2, 3)).rejects.toThrow('maxResultBytes (3)');
+  });
+
   it('prefers the recipient SMTP address over an Exchange Legacy DN', async () => {
     const storagePath = ['Root Entry', '__recip_version1.0_#00000000'];
     const properties = {

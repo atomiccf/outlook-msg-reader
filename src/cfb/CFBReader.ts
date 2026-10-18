@@ -1,3 +1,4 @@
+import { trimNullPadding } from '../utils/utils';
 import type { DirectoryNode } from '../types';
 import type { HeaderReader } from './readers/headerReader';
 import type { FATReader } from './readers/fatReader';
@@ -109,7 +110,7 @@ export class CFBFReader implements ICFBFReader {
 
         switch (propertyType) {
             case 0x001F: // PT_UNICODE
-                return buffer.toString('utf16le').replace(/\0+$/g, '');
+                return trimNullPadding(buffer.toString('utf16le'));
             case 0x001E: // PT_STRING8
             {
                 const embeddedRootIndex = path.lastIndexOf('__substg1.0_3701000D');
@@ -122,7 +123,7 @@ export class CFBFReader implements ICFBFReader {
                     new PropertyStreamReader(this),
                     rootStorage,
                 ).getCodepage();
-                return new Decoder().decodeBytes(buffer, codepage).replace(/\0+$/g, '');
+                return trimNullPadding(new Decoder().decodeBytes(buffer, codepage));
             }
             case 0x0102: // PT_BINARY
                 return buffer.toString('hex');

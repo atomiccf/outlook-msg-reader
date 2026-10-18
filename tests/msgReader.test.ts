@@ -58,7 +58,7 @@ describe('MsgReader result limits', () => {
     await expect(reader.parse()).resolves.toMatchObject({ subject: 'Hi', body: { text: 'Hello' } });
   });
 
-  it.each(['maxAttachments', 'maxResultBytes'] as const)(
+  it.each(['maxAttachments', 'maxRecipients', 'maxResultBytes'] as const)(
     'rejects invalid %s', (option) => {
       const { reader } = createReader();
       expect(() => reader.configure({ [option]: -1 })).toThrow(

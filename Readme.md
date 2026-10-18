@@ -51,7 +51,18 @@ try {
 }
 ```
 
-Both APIs accept optional limits such as `maxInputBytes`, `maxAttachmentBytes`, `maxAttachments`, `maxResultBytes`, and `maxEmbeddedMessageDepth`. Stream input moves to a temporary file after 8 MiB by default. Parsing and decoding errors extend `MsgError`.
+Both APIs accept optional limits such as `maxInputBytes`, `maxAttachmentBytes`, `maxAttachments`, `maxRecipients`, `maxResultBytes`, and `maxEmbeddedMessageDepth`. `maxRecipients` defaults to 1000 per message and covers recipient storages and display-address fallbacks across To/Cc/Bcc. Result budgets count UTF-8 string bytes and Buffer bytes; RTF decompression is also bounded by the remaining result budget. Stream input moves to a temporary file after 8 MiB by default. Parsing and decoding errors extend `MsgError`.
+
+Pass `signal` to cancel input reads, including a stream waiting for its next chunk. Cancellation destroys the input stream and removes temporary files before the read rejects with `signal.reason`. For example, an application can apply a timeout:
+
+```ts
+const message = await parseMsg(stream, {
+  signal: AbortSignal.timeout(5000),
+  maxRecipients: 500,
+});
+```
+
+The signal applies to the lifetime of a reader returned by `createMsgReader()`, including attachment reads. Synchronous parsing work does not yield to abort events; this timeout interrupts asynchronous input waits.
 
 These limits do not provide a timeout or cancellation: a stream that never ends can keep a read pending. `maxResultBytes` limits the returned data, not peak memory use; for example, RTF is decompressed before the remaining result budget is checked. Use `maxRtfBytes` to limit decompressed RTF separately.
 

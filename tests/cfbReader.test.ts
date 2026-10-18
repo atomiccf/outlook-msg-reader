@@ -14,6 +14,13 @@ function createSource() {
 }
 
 describe('CFBFReader', () => {
+  it('preserves a long embedded NUL run followed by non-padding text', async () => {
+    const reader = new CFBFReader({} as HeaderReader, {} as FATReader, {} as DirectoryReader);
+    const value = '\0'.repeat(32_000) + 'X';
+    vi.spyOn(reader, 'readStream').mockResolvedValue(Buffer.from(value + '\0', 'utf16le'));
+    await expect(reader.readStreamAsString(['Root Entry', '__substg1.0_0037001F'], 0x001F)).resolves.toBe(value);
+  });
+
   it('decodes PT_STRING8 using the MSG code page', async () => {
     const properties = Buffer.alloc(48);
     properties.writeUInt16LE(0x0003, 32);

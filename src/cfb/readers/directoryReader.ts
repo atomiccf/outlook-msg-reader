@@ -1,3 +1,4 @@
+import { trimNullPadding } from '../../utils/utils';
 import { END_OF_CHAIN, FREE_SECTOR } from "../../constants/cfbf";
 import {FATReader} from "./fatReader";
 import {MiniFATReader} from "./miniFATReader";
@@ -14,6 +15,7 @@ export const DEFAULT_MAX_DIRECTORY_BYTES = 32 * 1024 * 1024;
 export class DirectoryReader {
     private entries: DirectoryEntryRaw[] = [];
     private nodesBySid: Map<number, DirectoryNode> = new Map();
+    private childrenByNode = new Map<DirectoryNode, Map<string, DirectoryNode>>();
     private root: DirectoryNode | null = null;
     private fatReader: FATReader | null = null;
     private miniFATReader: MiniFATReader | null = null;
@@ -84,7 +86,7 @@ export class DirectoryReader {
                     );
                 }
                 const nameBytes = view.subarray(0x00, nameLength - 2); // trim trailing null
-                name = nameBytes.toString('utf16le').replace(/\0+$/, '');
+                name = trimNullPadding(nameBytes.toString('utf16le'));
             }
 
             const type = view.readUInt8(0x42) as DirectoryEntryType;
@@ -166,6 +168,7 @@ export class DirectoryReader {
         if (this.entries.length === 0) return null;
 
         this.nodesBySid.clear();
+        this.childrenByNode.clear();
         const entryBySid = new Map<number, DirectoryEntryRaw>();
         for (const e of this.entries) {
             entryBySid.set(e.sid, e);
@@ -273,6 +276,13 @@ export class DirectoryReader {
         assigned.add(rootEntry.sid);
         rootNode.children = buildSubtree(rootEntry.childSid, rootNode.sid, 1);
         this.root = rootNode;
+        for (const node of this.nodesBySid.values()) {
+            const children = new Map<string, DirectoryNode>();
+            for (const child of node.children) {
+                if (!children.has(child.name)) children.set(child.name, child);
+            }
+            this.childrenByNode.set(node, children);
+        }
 
         return this.root;
     }
@@ -289,7 +299,7 @@ export class DirectoryReader {
         const startIndex = (path[0] === this.root.name) ? 1 : 0;
         for (let i = startIndex; i < path.length; i++) {
             const part = path[i];
-            current = current?.children.find(c => c.name === part);
+            current = this.childrenByNode.get(current)?.get(part);
             if (!current) return null;
         }
         return current ?? null;

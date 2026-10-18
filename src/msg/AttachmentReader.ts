@@ -96,6 +96,8 @@ export class AttachmentReader {
     maxEmbeddedMessageDepth = DEFAULT_MAX_EMBEDDED_MESSAGE_DEPTH,
     maxResultBytes?: number,
     maxAttachments?: number,
+    maxRecipients?: number,
+    signal?: AbortSignal,
   ): Promise<Msg> {
     const entry = (await this.readAttachmentEntries(maxAttachments)).find(({ info }) => info.index === index);
     if (!entry) throw new RangeError(`Attachment index out of range: ${index}`);
@@ -116,7 +118,7 @@ export class AttachmentReader {
 
     const rootStorage = [...entry.storagePath, '__substg1.0_3701000D'];
     const reader = this.createEmbeddedReader(rootStorage);
-    reader.configure({ maxAttachmentBytes, maxRtfBytes, maxEmbeddedMessageDepth, maxResultBytes, maxAttachments });
+    reader.configure({ maxAttachmentBytes, maxRtfBytes, maxEmbeddedMessageDepth, maxResultBytes, maxAttachments, maxRecipients, signal });
     return reader.parse();
   }
 

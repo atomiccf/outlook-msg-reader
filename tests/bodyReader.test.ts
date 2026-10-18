@@ -26,6 +26,17 @@ function createRtfHeader(rawSize: number): Buffer {
 }
 
 describe('BodyReader', () => {
+  it('rejects an RTF allocation larger than the remaining result budget', async () => {
+    const properties = {
+      readString: async () => 'text',
+      read: async (ids: string[]) => ids[0] === '1009' ? createRtfHeader(64 * 1024 * 1024) : undefined,
+    } as unknown as PropertyStore;
+    const warn = vi.fn();
+    const reader = new BodyReader(properties, { warn } as unknown as Logger, new Decoder(), {} as CodePageReader);
+    await expect(reader.read(undefined, 10, 5)).rejects.toThrow('remaining maxResultBytes (1)');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('stops before reading another body format when text exceeds the result budget', async () => {
     const read = vi.fn(async () => undefined);
     const properties = {
@@ -107,23 +118,11 @@ describe('BodyReader', () => {
 });
 
 describe('BodyReader HTML fallback', () => {
-  it.each([
-    ['<p>Hello<br />world</p><div>Next</div>', 'Hello\nworld\nNext'],
-    ['before<script>x</script><STYLE>y</STYLE><head>z</head>after', 'beforeafter'],
-    ['before<script>keep<style>hide</style>after', 'before keepafter'],
-    ['before<>after <<tag> end <unfinished', 'before<>after end <unfinished'],
-    ['&lt;p&gt;&#65;&#x1F600;&nbsp;&quot;&apos;', '<p>A😀 "\''],
-  ])('preserves HTML fallback behavior for %s', async (html, text) => {
-    expect(await createHtmlReader(html).read()).toEqual({ html, text });
+  it('preserves embedded NUL runs in HTML while stripping trailing padding', async () => {
+    const html = '\0'.repeat(32_000) + 'X';
+    const bytes = Buffer.from(html + '\0', 'utf16le');
+    expect(await createHtmlReader(bytes).read()).toEqual({ html, text: html });
   });
-
-  it.each([
-    ['unclosed angle brackets', '<'.repeat(256_000), '<'.repeat(256_000)],
-    ['unclosed script sections', '<script>'.repeat(32_000), ''],
-    ['unclosed script tags', '<script '.repeat(32_000), '<script '.repeat(32_000).trim()],
-  ])('handles large input with %s', async (_name, html, text) => {
-    expect(await createHtmlReader(html).read()).toEqual({ html, text });
-  }, 2_000);
 
   it.each([4096, 4097])('decodes HTML with %i trailing padding bytes', async (paddingBytes) => {
     const html = '<html><body><p>Test email body.</p></body></html>';

@@ -36,6 +36,22 @@ function createTree(): DirectoryNode {
 }
 
 describe('PropertyStore storage scoping', () => {
+  it('isolates repeated property IDs in a large recipient tree', async () => {
+    const children = Array.from({ length: 2000 }, (_, index) => node(
+      `__recip_version1.0_#${index}`, DirectoryEntryType.Storage,
+      [node('__substg1.0_3001001F', DirectoryEntryType.Stream)],
+    ));
+    const tree = node('Root Entry', DirectoryEntryType.Root, children);
+    const readUnicodeString = vi.fn(async (path: string[]) => path[1]);
+    const store = new PropertyStore({ getTree: () => tree } as unknown as CFBFReader,
+      { readUnicodeString } as unknown as PropertyReader, {} as NamedPropertyReader);
+    for (const child of children) {
+      await expect(store.readStringAt(['Root Entry', child.name], ['3001'])).resolves.toBe(child.name);
+    }
+    expect(readUnicodeString).toHaveBeenCalledTimes(children.length);
+    await expect(store.readStringAt([children[0].name], ['3001'])).resolves.toBe(children[0].name);
+  });
+
   it('does not use nested properties as root message properties', async () => {
     const readUnicodeString = vi.fn(async () => 'nested subject');
     const store = new PropertyStore(

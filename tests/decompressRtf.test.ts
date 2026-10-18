@@ -13,6 +13,16 @@ function createHeader(rawSize: number): Buffer {
 }
 
 describe('decompressRtf', () => {
+  it('checks decoded UTF-8 bytes as well as the raw allocation budget', () => {
+    const input = Buffer.alloc(17);
+    input.writeUInt32LE(13, 0);
+    input.writeUInt32LE(1, 4);
+    input.writeUInt32LE(UNCOMPRESSED_MAGIC, 8);
+    input[16] = 0xe9;
+    expect(() => decompressRtf(input, undefined, 1)).toThrow('RTF text exceeds remaining maxResultBytes (1)');
+    expect(decompressRtf(input, undefined, 2)).toBe('é');
+  });
+
   it('rejects a declared output size beyond the configured limit', () => {
     expect(() => decompressRtf(createHeader(9), 8))
       .toThrow('RTF body exceeds maxRtfBytes (8)');

@@ -37,8 +37,9 @@ describe('isolated message sessions', () => {
       ]);
 
       try {
-        expect(first.getCFBReader()).not.toBe(second.getCFBReader());
         expect(await first.getSubject()).toBe(await second.getSubject());
+        await first.close();
+        expect(await second.getSubject()).toBe(parsed.subject);
         expect(parsed).toHaveProperty('attachments');
         expect(log).not.toHaveBeenCalled();
         expect(info).not.toHaveBeenCalled();

@@ -54,6 +54,80 @@ function chunk(input: Buffer, size: number): Buffer[] {
 }
 
 describe('Readable input', () => {
+  it('aborts a pending iterator even if destroying its stream never settles next()', async () => {
+    const controller = new AbortController();
+    const stream = new Readable({ read() {} });
+    let started!: () => void;
+    const pending = new Promise<void>(resolve => { started = resolve; });
+    stream[Symbol.asyncIterator] = () => ({
+      next: () => { started(); return new Promise(() => undefined); },
+    }) as ReturnType<Readable[typeof Symbol.asyncIterator]>;
+    const result = parseMsg(stream, { signal: controller.signal });
+    const assertion = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await pending;
+    controller.abort();
+    await assertion;
+    expect(stream.destroyed).toBe(true);
+  });
+
+  it('cleans a spilled file when cancellation interrupts finish()', async () => {
+    const controller = new AbortController();
+    const stream = new Readable({ read() {} });
+    stream.push(Buffer.from('payload'));
+    const mkdtemp = vi.fn(fs.promises.mkdtemp);
+    const trackedFs = { ...fs, promises: { ...fs.promises, mkdtemp } } as unknown as typeof fs;
+    const source = createRandomAccessSource(stream, trackedFs, {
+      signal: controller.signal, streamMemoryThreshold: 0,
+    });
+    await source.read(0, 7);
+    const directory = await mkdtemp.mock.results[0].value;
+    const result = source.finish!();
+    const assertion = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    controller.abort();
+    await assertion;
+    expect(stream.destroyed).toBe(true);
+    await expect(fs.promises.stat(directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    await source.close();
+  });
+
+  it('waits for a pending spill before removing its temporary directory on abort', async () => {
+    const controller = new AbortController();
+    let release!: () => void;
+    let started!: () => void;
+    const pending = new Promise<void>(resolve => { started = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let directory!: string;
+    const trackedFs = { ...fs, promises: { ...fs.promises,
+      mkdtemp: async (prefix: string) => {
+        directory = await fs.promises.mkdtemp(prefix);
+        started();
+        await gate;
+        return directory;
+      },
+    } } as typeof fs;
+    const stream = Readable.from([Buffer.from('payload')]);
+    const source = createRandomAccessSource(stream, trackedFs, { signal: controller.signal, streamMemoryThreshold: 0 });
+    const result = source.read(0, 7);
+    const assertion = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await pending;
+    controller.abort();
+    release();
+    await assertion;
+    await expect(fs.promises.stat(directory)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('destroys already-aborted input without consuming it', async () => {
+    const controller = new AbortController();
+    const reason = new Error('cancelled');
+    controller.abort(reason);
+    const read = vi.fn();
+    const stream = new Readable({ read });
+    await expect(parseMsg(stream, { signal: controller.signal })).rejects.toBe(reason);
+    expect(read).not.toHaveBeenCalled();
+    expect(stream.destroyed).toBe(true);
+    await expect(parseMsg(createEmptyMsg(), { signal: controller.signal })).rejects.toBe(reason);
+  });
+
   it('reads only the requested prefix even when a size limit is configured', async () => {
     let release!: () => void;
     const trailing = new Promise<void>((resolve) => { release = resolve; });

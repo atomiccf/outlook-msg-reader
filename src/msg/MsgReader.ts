@@ -8,6 +8,7 @@ import type { SubjectReader } from './SubjectReader';
 import type { MetadataReader } from './MetadataReader';
 import {
   DEFAULT_MAX_ATTACHMENTS,
+  DEFAULT_MAX_RECIPIENTS,
   DEFAULT_MAX_EMBEDDED_MESSAGE_DEPTH,
   DEFAULT_MAX_RESULT_BYTES,
   type MsgReaderOptions,
@@ -17,9 +18,11 @@ import {
 export class MsgReader {
   private maxAttachmentBytes?: number;
   private maxAttachments = DEFAULT_MAX_ATTACHMENTS;
+  private maxRecipients = DEFAULT_MAX_RECIPIENTS;
   private maxResultBytes = DEFAULT_MAX_RESULT_BYTES;
   private maxRtfBytes?: number;
   private maxEmbeddedMessageDepth = DEFAULT_MAX_EMBEDDED_MESSAGE_DEPTH;
+  private signal?: AbortSignal;
 
   constructor(
     private readonly cfbReader: CFBFReader,
@@ -32,6 +35,10 @@ export class MsgReader {
   ) {}
 
   configure(options: MsgReaderOptions): void {
+    if (options.maxRecipients !== undefined &&
+      (!Number.isSafeInteger(options.maxRecipients) || options.maxRecipients < 0)) {
+      throw new RangeError('maxRecipients must be a non-negative safe integer');
+    }
     if (
       options.maxAttachmentBytes !== undefined &&
       (!Number.isSafeInteger(options.maxAttachmentBytes) || options.maxAttachmentBytes < 0)
@@ -63,7 +70,9 @@ export class MsgReader {
       throw new RangeError('maxEmbeddedMessageDepth must be a non-negative safe integer');
     }
     this.maxAttachmentBytes = options.maxAttachmentBytes;
+    this.signal = options.signal;
     this.maxAttachments = options.maxAttachments ?? DEFAULT_MAX_ATTACHMENTS;
+    this.maxRecipients = options.maxRecipients ?? DEFAULT_MAX_RECIPIENTS;
     this.maxResultBytes = options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES;
     this.maxRtfBytes = options.maxRtfBytes;
     this.maxEmbeddedMessageDepth =
@@ -71,6 +80,16 @@ export class MsgReader {
   }
 
   async parse(): Promise<Msg> {
+    try {
+      this.signal?.throwIfAborted();
+      return await this.parseMessage();
+    } catch (error) {
+      this.signal?.throwIfAborted();
+      throw error;
+    }
+  }
+
+  private async parseMessage(): Promise<Msg> {
     let remaining = this.maxResultBytes;
     const charge = (value: unknown): void => {
       if (remaining === undefined || value === null || value === undefined) return;
@@ -96,7 +115,9 @@ export class MsgReader {
     charge(body);
     const from = await this.getFrom();
     charge(from);
-    const recipients = await this.getRecipients();
+    const recipients = await this.recipientReader.read(
+      this.maxRecipients, this.maxResultBytes, this.maxResultBytes - remaining,
+    );
     charge(recipients);
     const usedResultBytes = this.maxResultBytes !== undefined && remaining !== undefined
       ? this.maxResultBytes - remaining
@@ -125,7 +146,15 @@ export class MsgReader {
   getSubject(): Promise<string> { return this.subjectReader.read(); }
   getBody(): Promise<MsgBody> { return this.bodyReader.read(this.maxRtfBytes, this.maxResultBytes); }
   getFrom(): Promise<MsgRecipient> { return this.senderReader.read(); }
-  getRecipients(): Promise<Recipients> { return this.recipientReader.read(); }
+  async getRecipients(): Promise<Recipients> {
+    try {
+      this.signal?.throwIfAborted();
+      return await this.recipientReader.read(this.maxRecipients, this.maxResultBytes);
+    } catch (error) {
+      this.signal?.throwIfAborted();
+      throw error;
+    }
+  }
   getAttachments() {
     return this.attachmentReader.readAttachments(this.maxAttachmentBytes, this.maxResultBytes, this.maxAttachments);
   }
@@ -139,12 +168,11 @@ export class MsgReader {
       this.maxEmbeddedMessageDepth,
       this.maxResultBytes,
       this.maxAttachments,
+      this.maxRecipients,
+      this.signal,
     );
   }
   getMetadata(): Promise<MsgMetadata> { return this.metadataReader?.read() ?? Promise.resolve({}); }
-
-  /** Advanced access to the isolated compound-file reader for this message. */
-  getCFBReader(): CFBFReader { return this.cfbReader; }
 
   /** Releases resources retained by stream-backed input. */
   close(): Promise<void> { return this.cfbReader.close(); }
