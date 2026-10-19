@@ -1,7 +1,10 @@
 {
   "name": "outlook-msg-reader",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Parser for Microsoft Outlook MSG files",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -12,7 +15,10 @@
       "require": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "sideEffects": false,
   "scripts": {
     "lint": "eslint . --ext .ts",
@@ -21,19 +27,33 @@
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "prepack": "npm run build"
   },
-  "keywords": ["outlook", "msg", "email", "parser", "cfbf"],
+  "keywords": [
+    "outlook",
+    "microsoft-outlook",
+    "outlook-msg",
+    "msg",
+    "msg-reader",
+    "msg-parser",
+    "msg-file",
+    "email",
+    "email-reader",
+    "email-parser",
+    "mail-parser",
+    "typescript",
+    "nodejs"
+  ],
   "author": "Viacheslau Vasilyeu",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/atomiccf/msg-js.git"
+    "url": "git+https://github.com/atomiccf/outlook-msg-reader.git"
   },
-  "bugs": "https://github.com/atomiccf/msg-js/issues",
-  "homepage": "https://github.com/atomiccf/msg-js#readme",
+  "bugs": "https://github.com/atomiccf/outlook-msg-reader/issues",
+  "homepage": "https://github.com/atomiccf/outlook-msg-reader#readme",
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@types/node": "^24.10.1",
-    "@vitest/ui": "^4.0.9",
+    "@types/node": "^22.19.0",
+    "@vitest/ui": "^4.1.12",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
@@ -43,6 +63,6 @@
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vitest": "^4.0.9"
+    "vitest": "^4.1.12"
   }
 }
