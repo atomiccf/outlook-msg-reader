@@ -2,9 +2,11 @@ import type { Logger } from '../logging/Logger';
 import type { PropertyStore } from '../mapi/PropertyStore';
 import type { MsgBody, MsgDiagnostic } from '../types';
 import { decompressRtf } from '../rtf/decompressRtf';
+import { extractRtfBody } from '../rtf/extractRtfBody';
 import type { Decoder } from '../encoding/decoder';
 import type { CodePageReader } from '../mapi/CodePageReader';
 import { trimNullPadding } from '../utils/utils';
+import { TextDecoder } from 'node:util';
 
 export class BodyReader {
   constructor(
@@ -66,6 +68,28 @@ export class BodyReader {
         this.logger.warn('Unable to decompress RTF body', error);
       }
     }
+    if (body.rtf && (body.html === undefined || !body.text)) {
+      try {
+        const extracted = extractRtfBody(body.rtf, {
+          html: body.html === undefined,
+          text: !body.text,
+          maxBytes: maxResultBytes === undefined ? undefined : maxResultBytes - usedBytes,
+        });
+        if (body.html === undefined && extracted.html !== undefined) {
+          charge(extracted.html);
+          body.html = extracted.html;
+        }
+        if (!body.text) {
+          const text = body.html ? this.htmlToText(body.html) : extracted.text;
+          charge(text);
+          if (text !== undefined) body.text = text;
+        }
+      } catch (error) {
+        if (error instanceof RangeError) throw error;
+        onDiagnostic?.({ code: 'RTF_CONVERSION_FAILED', message: 'Unable to extract readable body from RTF' });
+        this.logger.warn('Unable to extract readable body from RTF', error);
+      }
+    }
     return body;
   }
 
@@ -87,7 +111,18 @@ export class BodyReader {
     if (this.isLikelyUtf16Le(value)) {
       return trimNullPadding(value.toString('utf16le'));
     }
-    const codepage = await this.codePageReader.getCodepage();
+    const charset = value.toString('latin1')
+      .match(/<meta\b[^>]*\bcharset\s*=\s*["']?\s*([a-z0-9._:-]+)/i)?.[1];
+    let htmlDecoder;
+    if (charset) {
+      try {
+        htmlDecoder = new TextDecoder(charset);
+      } catch {
+        this.logger.warn('Unsupported HTML charset', charset);
+      }
+    }
+    if (htmlDecoder) return trimNullPadding(htmlDecoder.decode(value));
+    const codepage = await this.codePageReader.getCodepage(true);
     return trimNullPadding(this.decoder.decodeBytes(value, codepage));
   }
 

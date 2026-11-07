@@ -13,7 +13,7 @@ function createHeader(rawSize: number): Buffer {
 }
 
 describe('decompressRtf', () => {
-  it('checks decoded UTF-8 bytes as well as the raw allocation budget', () => {
+  it('counts UTF-8 payload bytes of the lossless byte string as well as the raw allocation', () => {
     const input = Buffer.alloc(17);
     input.writeUInt32LE(13, 0);
     input.writeUInt32LE(1, 4);
@@ -54,7 +54,7 @@ describe('decompressRtf', () => {
     expect(decompressRtf(input)).toBe('\u00e9');
   });
 
-  it.each([UNCOMPRESSED_MAGIC, COMPRESSED_MAGIC])('decodes literal RTF text using ansicpg1251 (%s)', (magic) => {
+  it.each([UNCOMPRESSED_MAGIC, COMPRESSED_MAGIC])('preserves literal RTF bytes independently of ansicpg1251 (%s)', (magic) => {
     const body = Buffer.concat([
       Buffer.from('{\\rtf1\\ansi\\ansicpg1251 ', 'ascii'),
       Buffer.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]),
@@ -70,6 +70,22 @@ describe('decompressRtf', () => {
     input.writeUInt32LE(magic, 8);
     payload.copy(input, 16);
 
-    expect(decompressRtf(input)).toBe('{\\rtf1\\ansi\\ansicpg1251 Привет}');
+    expect(Buffer.from(decompressRtf(input), 'latin1')).toEqual(body);
+  });
+
+  it.each([UNCOMPRESSED_MAGIC, COMPRESSED_MAGIC])('preserves arbitrary binary bytes in a UTF-8 document (%s)', (magic) => {
+    const body = Buffer.concat([
+      Buffer.from(String.raw`{\rtf1\ansicpg65001{\pict\bin5 `),
+      Buffer.from([0xe4, 0xb8, 0xad, 0xff, 0x00]), Buffer.from('}}'),
+    ]);
+    const payload = magic === UNCOMPRESSED_MAGIC ? body : Buffer.concat(
+      Array.from({ length: Math.ceil(body.length / 8) }, (_, index) =>
+        Buffer.concat([Buffer.from([0]), body.subarray(index * 8, index * 8 + 8)])));
+    const input = Buffer.alloc(16 + payload.length);
+    input.writeUInt32LE(input.length - 4, 0);
+    input.writeUInt32LE(body.length, 4);
+    input.writeUInt32LE(magic, 8);
+    payload.copy(input, 16);
+    expect(Buffer.from(decompressRtf(input), 'latin1')).toEqual(body);
   });
 });

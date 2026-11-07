@@ -1,5 +1,4 @@
 import { PropertyDecodeError } from '../errors/errors';
-import { TextDecoder } from 'node:util';
 
 const COMPRESSED_MAGIC = 0x75465a4c; // LZFu
 const UNCOMPRESSED_MAGIC = 0x414c454d; // MELA
@@ -10,43 +9,23 @@ const INITIAL_DICTIONARY = Buffer.from(
   'ascii',
 );
 
-function decodeRtf(bytes: Buffer, maxTextBytes?: number): string {
-  const preserved = bytes.toString('latin1');
-  const codePage = /\\ansicpg(\d+)(?!\d)/.exec(preserved)?.[1];
-
-  const otherEncodings: Record<string, string> = {
-    '65001': 'utf-8',
-    '28592': 'iso-8859-2',
-    '20866': 'koi8-r',
-    '20127': 'us-ascii',
-  };
-  let decoder: TextDecoder | undefined;
-  if (codePage) {
-    const encoding = otherEncodings[codePage] ?? `windows-${codePage}`;
-    try {
-      decoder = new TextDecoder(encoding);
-    } catch (error) {
-      if (!(error instanceof RangeError)) throw error;
-    }
-  }
+// A Latin-1 byte string preserves every byte and keeps \binN offsets unchanged.
+// Text runs are decoded later, using the document or selected font code page.
+function preserveRtfBytes(bytes: Buffer, maxTextBytes?: number): string {
   const parts: string[] = [];
   let textBytes = 0;
-  const append = (text: string): void => {
-    textBytes += Buffer.byteLength(text);
+  for (let offset = 0; offset < bytes.length; offset += 4096) {
+    const chunk = bytes.subarray(offset, offset + 4096).toString('latin1');
+    textBytes += Buffer.byteLength(chunk);
     if (maxTextBytes !== undefined && textBytes > maxTextBytes) {
       throw new RangeError(`RTF text exceeds remaining maxResultBytes (${maxTextBytes})`);
     }
-    parts.push(text);
-  };
-  for (let offset = 0; offset < bytes.length; offset += 4096) {
-    const chunk = bytes.subarray(offset, offset + 4096);
-    append(decoder ? decoder.decode(chunk, { stream: true }) : chunk.toString('latin1'));
+    parts.push(chunk);
   }
-  if (decoder) append(decoder.decode());
   return parts.join('');
 }
 
-/** Decompresses PidTagRtfCompressed according to MS-OXRTFCP. */
+/** Decompresses PidTagRtfCompressed into a lossless Latin-1 byte string (MS-OXRTFCP). */
 export function decompressRtf(
   input: Buffer,
   maxRtfBytes: number = DEFAULT_MAX_RTF_BYTES,
@@ -73,7 +52,7 @@ export function decompressRtf(
 
   if (magic === UNCOMPRESSED_MAGIC) {
     if (16 + rawSize > input.length) throw new PropertyDecodeError('Uncompressed RTF body is truncated');
-    return decodeRtf(input.subarray(16, 16 + rawSize), maxTextBytes);
+    return preserveRtfBytes(input.subarray(16, 16 + rawSize), maxTextBytes);
   }
   if (magic !== COMPRESSED_MAGIC) throw new PropertyDecodeError('Unknown compressed RTF signature');
 
@@ -100,7 +79,7 @@ export function decompressRtf(
       const second = input[inputOffset++];
       let referenceOffset = (first << 4) | (second >> 4);
       const length = (second & 0x0f) + 2;
-      if (referenceOffset === dictionaryOffset) return decodeRtf(output.subarray(0, outputOffset), maxTextBytes);
+      if (referenceOffset === dictionaryOffset) return preserveRtfBytes(output.subarray(0, outputOffset), maxTextBytes);
 
       for (let index = 0; index < length && outputOffset < rawSize; index += 1) {
         const value = dictionary[referenceOffset];
@@ -113,5 +92,5 @@ export function decompressRtf(
   }
 
   if (outputOffset !== rawSize) throw new PropertyDecodeError(`Compressed RTF ended at ${outputOffset} of ${rawSize} bytes`);
-  return decodeRtf(output, maxTextBytes);
+  return preserveRtfBytes(output, maxTextBytes);
 }

@@ -25,9 +25,11 @@ for (const attachment of message.attachments) {
 
 `parseMsg()` accepts a file path, `Buffer`, or Node.js `Readable`. It returns the message, recipients, body formats, and attachments. ANSI and Unicode MSG files are supported.
 
-## Partial results and diagnostics
+The body is available as `body.text`, `body.html`, and `body.rtf`. Missing text and encapsulated HTML are extracted from RTF when possible.
 
-HTML decoding and RTF decompression failures are reported in `message.diagnostics`. Other available body formats are preserved.
+## Diagnostics
+
+Recoverable body errors are reported in `message.diagnostics`; available content is preserved.
 
 ```ts
 const message = await parseMsg('email.msg');
@@ -35,10 +37,6 @@ for (const diagnostic of message.diagnostics ?? []) {
   console.warn(diagnostic.code, diagnostic.message);
 }
 ```
-
-Diagnostic codes are `HTML_DECODE_FAILED` and `RTF_DECODE_FAILED`. The `diagnostics` field is omitted when there are no recoverable failures.
-
-With `createMsgReader()`, call `reader.getDiagnostics()` after awaiting `getBody()` or `parse()`. Other parsing errors, exceeded limits, and cancellation reject the operation.
 
 ## Large attachments
 
@@ -70,20 +68,12 @@ try {
 
 ## Limits and cancellation
 
-Both APIs accept `MsgReaderOptions` to limit input size, attachments, recipients, result size, decompressed RTF, and embedded-message depth:
+Both APIs accept size limits and an `AbortSignal` through `MsgReaderOptions`:
 
 ```ts
 const message = await parseMsg('email.msg', {
   maxInputBytes: 50 * 1024 * 1024,
   maxResultBytes: 100 * 1024 * 1024,
-  maxRtfBytes: 10 * 1024 * 1024,
-  maxRecipients: 500,
   signal: AbortSignal.timeout(5000),
 });
 ```
-
-`maxAttachmentBytes` limits each buffered file attachment; `maxAttachments` and `maxEmbeddedMessageDepth` limit attachment count and nesting. `maxResultBytes` counts UTF-8 string and Buffer payload bytes, including diagnostics; it does not cap total memory use.
-
-Stream input moves to a temporary file after 8 MiB by default, configurable with `streamMemoryThreshold`.
-
-`signal` cancels asynchronous input waits, including attachment reads, but cannot interrupt synchronous parsing. Cancellation destroys stream input and removes temporary files. Size limits alone do not impose a timeout.

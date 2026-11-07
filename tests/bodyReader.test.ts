@@ -132,7 +132,7 @@ describe('BodyReader', () => {
 
     await expect(new BodyReader(properties, logger, new Decoder(), codePageReader).read())
       .resolves.toEqual({ html: '<p>Привет</p>', text: 'Привет' });
-    expect(codePageReader.getCodepage).toHaveBeenCalledTimes(1);
+    expect(codePageReader.getCodepage).toHaveBeenCalledExactlyOnceWith(true);
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
@@ -155,6 +155,61 @@ describe('BodyReader', () => {
 });
 
 describe('BodyReader HTML fallback', () => {
+  it.each([
+    '<meta charset="utf-8">',
+    "<META CHARSET='UTF-8'>",
+    '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+  ])('decodes Polish HTML with %s despite a Windows-1252 message code page', async (meta) => {
+    const text = 'Sprawdź okazje\u200c';
+    const html = `${meta}<p>${text}</p>`;
+
+    expect(await createHtmlReader(Buffer.from(html, 'utf8')).read()).toEqual({ html, text });
+  });
+
+  it('uses PR_INTERNET_CPID when HTML has no charset declaration', async () => {
+    const html = '<p>Sprawdź okazje\u200c</p>';
+    const properties = {
+      readString: async () => undefined,
+      read: async (ids: string[]) => ids[0] === '1013' ? Buffer.from(html) : undefined,
+    } as unknown as PropertyStore;
+    const codePageReader = {
+      getCodepage: async (preferInternet: boolean) => preferInternet ? 65001 : 1252,
+    } as unknown as CodePageReader;
+    const reader = new BodyReader(properties, { warn: vi.fn() } as unknown as Logger,
+      new Decoder(), codePageReader);
+
+    expect(await reader.read()).toEqual({ html, text: 'Sprawdź okazje\u200c' });
+  });
+
+  it('honors a Windows-1250 HTML charset over the message code page', async () => {
+    const html = Buffer.concat([
+      Buffer.from('<meta charset=windows-1250><p>'),
+      Buffer.from([0xa3, 0xf3, 0x64, 0x9f]),
+      Buffer.from('</p>'),
+    ]);
+
+    expect(await createHtmlReader(html).read()).toEqual({
+      html: '<meta charset=windows-1250><p>Łódź</p>', text: 'Łódź',
+    });
+  });
+
+  it('keeps a UTF-8 BOM ahead of a conflicting HTML charset', async () => {
+    const html = '<meta charset=windows-1252><p>Sprawdź</p>';
+    const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(html)]);
+
+    expect(await createHtmlReader(bytes).read()).toEqual({ html, text: 'Sprawdź' });
+  });
+
+  it('falls back to the message code page for an unknown HTML charset', async () => {
+    const bytes = Buffer.concat([
+      Buffer.from('<meta charset=unknown-charset><p>caf'), Buffer.from([0xe9]), Buffer.from('</p>'),
+    ]);
+
+    expect(await createHtmlReader(bytes).read()).toEqual({
+      html: '<meta charset=unknown-charset><p>café</p>', text: 'café',
+    });
+  });
+
   it('preserves embedded NUL runs in HTML while stripping trailing padding', async () => {
     const html = '\0'.repeat(32_000) + 'X';
     const bytes = Buffer.from(html + '\0', 'utf16le');

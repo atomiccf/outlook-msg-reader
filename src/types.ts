@@ -25,14 +25,17 @@ export interface MsgAttachmentStream extends MsgAttachmentInfo {
 }
 
 export interface MsgBody {
+    /** Original MSG text, or text derived from HTML or RTF when absent. */
     text?: string;
+    /** Original MSG HTML, or HTML extracted from encapsulated RTF when absent. */
     html?: string;
+    /** Decompressed RTF as a Latin-1 byte string. Restore bytes with Buffer.from(rtf, 'latin1'). */
     rtf?: string;
 }
 
 /** A recoverable decoding failure that left part of the message unavailable. */
 export interface MsgDiagnostic {
-    code: 'HTML_DECODE_FAILED' | 'RTF_DECODE_FAILED';
+    code: 'HTML_DECODE_FAILED' | 'RTF_DECODE_FAILED' | 'RTF_CONVERSION_FAILED';
     message: string;
 }
 
