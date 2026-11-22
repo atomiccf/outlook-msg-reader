@@ -7,14 +7,20 @@ describe('MetadataReader', () => {
   it('reads standard message metadata from the root storage', async () => {
     const sentAt = new Date('2026-01-02T03:04:05.000Z');
     const receivedAt = new Date('2026-01-02T03:05:06.000Z');
+    const createdAt = new Date('2026-01-02T03:00:00.000Z');
+    const modifiedAt = new Date('2026-01-02T03:10:00.000Z');
     const readStringAt = vi.fn(async (_path: string[], ids: string[]) => {
       if (ids[0] === '1035') return ' <message@example.test> ';
       if (ids[0] === '007D') return ' From: sender@example.test\r\n ';
       return undefined;
     });
-    const read = vi.fn(async (_path: string[], ids: string[]) => (
-      ids[0] === '0039' ? sentAt : receivedAt
-    ));
+    const dates = new Map([
+      ['0039', sentAt],
+      ['0E06', receivedAt],
+      ['3007', createdAt],
+      ['3008', modifiedAt],
+    ]);
+    const read = vi.fn(async (_path: string[], ids: string[]) => dates.get(ids[0]));
     const readNumber = vi.fn(async () => 2);
     const reader = new MetadataReader(
       { readStringAt } as unknown as PropertyStore,
@@ -25,6 +31,8 @@ describe('MetadataReader', () => {
       messageId: '<message@example.test>',
       sentAt,
       receivedAt,
+      createdAt,
+      modifiedAt,
       transportHeaders: 'From: sender@example.test',
       importance: 'high',
     });
@@ -45,6 +53,8 @@ describe('MetadataReader', () => {
       messageId: undefined,
       sentAt: undefined,
       receivedAt: undefined,
+      createdAt: undefined,
+      modifiedAt: undefined,
       transportHeaders: undefined,
       importance: undefined,
     });

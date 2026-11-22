@@ -27,6 +27,27 @@ for (const attachment of message.attachments) {
 
 The body is available as `body.text`, `body.html`, and `body.rtf`. Missing text and encapsulated HTML are extracted from RTF when possible.
 
+## Message dates
+
+`parseMsg()` includes message dates in `message.metadata`:
+
+| Field | Meaning |
+| --- | --- |
+| `sentAt` | When the message was sent |
+| `receivedAt` | When the message was delivered |
+| `createdAt` | When the message object was created |
+| `modifiedAt` | When the message object was last modified |
+
+Each field is a JavaScript `Date` when the MSG contains a valid value, or `undefined` otherwise. A message can have a creation date even if it has no sent date.
+
+```ts
+const message = await parseMsg('email.msg');
+console.log(message.metadata?.sentAt?.toISOString());
+console.log(message.metadata?.createdAt?.toISOString());
+```
+
+With `createMsgReader()`, call `await reader.getMetadata()` to read the dates without parsing the whole message.
+
 ## Diagnostics
 
 Recoverable body errors are reported in `message.diagnostics`; available content is preserved.

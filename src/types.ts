@@ -50,6 +50,10 @@ export interface MsgMetadata {
     messageId?: string;
     sentAt?: Date;
     receivedAt?: Date;
+    /** When the message object was created. */
+    createdAt?: Date;
+    /** When the message object was last modified. */
+    modifiedAt?: Date;
     transportHeaders?: string;
     importance?: MsgImportance;
 }

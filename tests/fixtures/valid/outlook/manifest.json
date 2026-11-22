@@ -10,7 +10,30 @@
       "sha256": "2f7a2d0160521a6f14130b1939c8b7f22c7be2cec40ae4de7997768f37200124",
       "expected": {
         "subject": "Basic plain message",
-        "textContains": "Simple message body."
+        "textContains": "Simple message body.",
+        "dates": {
+          "sentAt": null,
+          "receivedAt": null,
+          "createdAt": "2026-10-16T07:17:43.226Z",
+          "modifiedAt": "2026-10-16T07:17:43.226Z"
+        }
+      }
+    },
+    {
+      "id": "message-dates",
+      "file": "message-dates.msg",
+      "producer": "Derived from plain-basic-unicode.msg with four fixed MAPI timestamps",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "0bb15fdc94da9c4153491d1124a7b8a3e83e9108d5a8698f68f823f397d254ef",
+      "expected": {
+        "subject": "Basic plain message",
+        "dates": {
+          "sentAt": "2026-01-02T03:04:05.123Z",
+          "receivedAt": "2026-01-02T03:04:10.456Z",
+          "createdAt": "2026-01-02T03:00:00.789Z",
+          "modifiedAt": "2026-01-02T03:05:00.012Z"
+        }
       }
     },
     {

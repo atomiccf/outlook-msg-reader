@@ -10,11 +10,13 @@ export class MetadataReader {
 
   async read(): Promise<MsgMetadata> {
     const rootStorage = this.properties.getRootStorage?.() ?? ['Root Entry'];
-    const [messageId, transportHeaders, sentAt, receivedAt, importanceValue] = await Promise.all([
+    const [messageId, transportHeaders, sentAt, receivedAt, createdAt, modifiedAt, importanceValue] = await Promise.all([
       this.properties.readStringAt(rootStorage, ['1035']),
       this.properties.readStringAt(rootStorage, ['007D']),
       this.propertyStream.read(rootStorage, ['0039']),
       this.propertyStream.read(rootStorage, ['0E06']),
+      this.propertyStream.read(rootStorage, ['3007']),
+      this.propertyStream.read(rootStorage, ['3008']),
       this.propertyStream.readNumber(rootStorage, ['0017']),
     ]);
 
@@ -23,6 +25,8 @@ export class MetadataReader {
       transportHeaders: transportHeaders?.trim() || undefined,
       sentAt: this.asValidDate(sentAt),
       receivedAt: this.asValidDate(receivedAt),
+      createdAt: this.asValidDate(createdAt),
+      modifiedAt: this.asValidDate(modifiedAt),
       importance: this.asImportance(importanceValue),
     };
   }

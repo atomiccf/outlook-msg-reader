@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createMsgReader, parseMsg } from '../src';
 
 interface FixtureExpectation {
+  dates?: Record<'sentAt' | 'receivedAt' | 'createdAt' | 'modifiedAt', string | null>;
   subject?: string;
   subjectContains?: string;
   textContains?: string;
@@ -65,6 +66,20 @@ describe('real MSG fixtures', () => {
     }
     if (expected.attachmentKinds !== undefined) {
       expect(message.attachments.map((item) => item.kind)).toEqual(expected.attachmentKinds);
+    }
+    if (expected.dates !== undefined) {
+      const reader = await createMsgReader(filePath);
+      try {
+        const metadata = await reader.getMetadata();
+        for (const key of ['sentAt', 'receivedAt', 'createdAt', 'modifiedAt'] as const) {
+          const iso = expected.dates[key];
+          const date = iso === null ? undefined : new Date(iso);
+          expect(message.metadata?.[key], key).toEqual(date);
+          expect(metadata[key], key).toEqual(date);
+        }
+      } finally {
+        await reader.close();
+      }
     }
   });
 
