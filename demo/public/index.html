@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Open Outlook .msg files in your browser.">
+    <title>MSG Viewer</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main>
+      <section class="intro" id="intro">
+        <h1>Outlook MSG Viewer</h1>
+        <p>Open an Outlook .msg file to view the message and its attachments.</p>
+
+        <label class="drop-zone" id="drop-zone">
+          <input id="file-input" type="file" accept=".msg,application/vnd.ms-outlook">
+          <strong>Choose a .msg file</strong>
+          <span class="muted">Or drop it here · up to 100 MiB</span>
+        </label>
+        <p class="muted">Your file stays on your device.</p>
+      </section>
+
+      <section class="error-panel" id="error-panel" hidden role="alert">
+        <strong>Could not open the message.</strong>
+        <span id="error-message"></span>
+      </section>
+
+      <article class="message" id="message" hidden>
+        <nav class="message-toolbar">
+          <button class="back-button" id="open-another" type="button">Open another file</button>
+          <span id="file-summary"></span>
+        </nav>
+
+        <header class="message-header">
+          <h2 id="subject"></h2>
+          <div class="sender-line">
+            <div>
+              <strong id="from-name"></strong>
+              <span id="from-email"></span>
+            </div>
+            <time id="sent-at"></time>
+          </div>
+          <dl class="recipient-list" id="recipients"></dl>
+        </header>
+
+        <div class="content-grid">
+          <section class="body-card">
+            <div class="tabs" role="tablist" aria-label="Message format">
+              <button class="tab active" type="button" data-body="html" role="tab">HTML</button>
+              <button class="tab" type="button" data-body="text" role="tab">Text</button>
+              <button class="tab" type="button" data-body="rtf" role="tab">RTF</button>
+            </div>
+            <div id="body-empty" class="empty-state muted" hidden>No message body.</div>
+            <iframe id="html-body" class="html-body" sandbox="" title="HTML message body"></iframe>
+            <pre id="text-body" class="plain-body" hidden></pre>
+            <pre id="rtf-body" class="plain-body" hidden></pre>
+          </section>
+
+          <aside class="details-column">
+            <section class="detail-card">
+              <div class="section-heading">
+                <h3>Attachments</h3>
+                <span class="count" id="attachment-count">0</span>
+              </div>
+              <div id="attachments" class="attachment-list"></div>
+            </section>
+
+            <section class="detail-card">
+              <div class="section-heading"><h3>Metadata</h3></div>
+              <dl class="metadata" id="metadata"></dl>
+            </section>
+
+            <details class="headers-card" id="headers-card">
+              <summary>Transport headers</summary>
+              <pre id="transport-headers"></pre>
+            </details>
+          </aside>
+        </div>
+      </article>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test parity.mjs"
+  },
+  "devDependencies": {
+    "buffer": "6.0.3",
+    "esbuild": "0.27.0"
+  }
+}
