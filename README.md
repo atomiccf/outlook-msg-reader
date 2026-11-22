@@ -2,7 +2,7 @@
 
 A TypeScript library for reading Microsoft Outlook `.msg` files. No runtime dependencies.
 
-[Try the live demo](https://atomiccf.github.io/outlook-msg-reader/) to open an Outlook `.msg` file directly in your browser. The file stays on your device.
+[Try the live demo](https://atomiccf.github.io/outlook-msg-reader/) to open an Outlook `.msg` file directly in your browser.
 
 ## Install
 
