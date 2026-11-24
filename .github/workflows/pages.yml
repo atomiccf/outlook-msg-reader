@@ -30,7 +30,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci --prefix demo
       - run: npm --prefix demo test
-      - run: npm --prefix demo run build
+      - run: npm --prefix demo run build -- --github-pages
       - uses: actions/upload-pages-artifact@v4
         with:
           path: demo/dist

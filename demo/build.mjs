@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -47,7 +47,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const output = new URL('./dist/', import.meta.url);
   await mkdir(output, { recursive: true });
   await bundle('public/app.js', { outfile: 'dist/app.js', minify: true, legalComments: 'eof' });
-  for (const asset of ['index.html', 'styles.css']) {
-    await copyFile(new URL(`./public/${asset}`, import.meta.url), new URL(asset, output));
+  await copyFile(new URL('./public/styles.css', import.meta.url), new URL('styles.css', output));
+
+  const index = new URL('./public/index.html', import.meta.url);
+  const outputIndex = new URL('index.html', output);
+  if (process.argv.includes('--github-pages')) {
+    const html = await readFile(index, 'utf8');
+    const analytics = `    <!-- Cloudflare Web Analytics -->
+    <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "c6ba556d1ad64a549bd49664f1be9fe6"}'></script>`;
+    await writeFile(outputIndex, html.replace('  </body>', `${analytics}\n  </body>`));
+  } else {
+    await copyFile(index, outputIndex);
   }
 }
