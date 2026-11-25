@@ -10,6 +10,7 @@ import type { NamedPropertyReader } from '../src/mapi/NamedPropertyReader';
 import { DirectoryEntryType, type DirectoryNode } from '../src/types';
 import { Decoder } from '../src/encoding/decoder';
 import { NoopLogger } from '../src/logging/Logger';
+import { InvalidCfbfError } from '../src/errors/errors';
 import { createMessageReader } from '../src/msg/createMessageReader';
 import { UnsupportedMsgFeatureError } from '../src/errors/errors';
 
@@ -132,7 +133,9 @@ describe('AttachmentReader streaming', () => {
       { readNumber: vi.fn(async () => 1) } as unknown as PropertyStreamReader,
     );
 
+    await expect(reader.readAttachments()).rejects.toBeInstanceOf(InvalidCfbfError);
     await expect(reader.readAttachments()).rejects.toThrow('Attachment content stream is missing: missing.bin');
+    await expect(reader.openAttachment(0)).rejects.toBeInstanceOf(InvalidCfbfError);
     await expect(reader.openAttachment(0)).rejects.toThrow('Attachment content stream is missing: missing.bin');
   });
 

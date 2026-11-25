@@ -2,7 +2,11 @@ node_modules
 dist
 scripts/
 .idea
-.tools
+.tools/*
+!.tools/security-audit/
+.tools/security-audit/*
+!.tools/security-audit/baseline.md
+!.tools/security-audit/supply-chain.md
 **/bin
 **/obj
 tests/fixtures/*
@@ -15,3 +19,6 @@ tests/fixtures/valid/outlook/*
 sample
 index.js
 run.js
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/dist/
