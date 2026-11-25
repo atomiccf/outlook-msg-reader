@@ -100,3 +100,9 @@ const message = await parseMsg('email.msg', {
   signal: AbortSignal.timeout(5000),
 });
 ```
+
+## Parsing untrusted input
+
+`.msg` files from untrusted senders can be crafted to hang a naive CFBF parser or inflate RTF/HTML. This package applies size limits, cycle detection, and `AbortSignal` cancellation. `body.html` is **not** sanitized.
+
+See [SECURITY.md](SECURITY.md) for the threat model, defaults, and tighter settings for untrusted input.

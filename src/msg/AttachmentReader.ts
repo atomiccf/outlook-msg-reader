@@ -4,7 +4,7 @@ import type { PropertyStreamReader } from '../mapi/PropertyStreamReader';
 import type { Msg, MsgAttachment, MsgAttachmentInfo, MsgAttachmentStream } from '../types';
 import type { MsgReader } from './MsgReader';
 import { DEFAULT_MAX_EMBEDDED_MESSAGE_DEPTH } from '../api/options';
-import { UnsupportedMsgFeatureError } from '../errors/errors';
+import { InvalidCfbfError, UnsupportedMsgFeatureError } from '../errors/errors';
 
 export type EmbeddedMessageReaderFactory = (rootStorage: string[]) => MsgReader;
 
@@ -57,7 +57,7 @@ export class AttachmentReader {
         );
       }
       const data = await this.cfbReader.readStream(dataPath);
-      if (!data) throw new Error(`Attachment content stream is missing: ${info.name}`);
+      if (!data) throw new InvalidCfbfError(`Attachment content stream is missing: ${info.name}`);
       if (maxAttachmentBytes !== undefined && data.length > maxAttachmentBytes) {
         throw new RangeError(`Attachment "${info.name}" exceeds maxAttachmentBytes (${maxAttachmentBytes})`);
       }
@@ -85,7 +85,7 @@ export class AttachmentReader {
       throw new TypeError('Embedded message attachments do not expose a binary content stream');
     }
     const content = await this.cfbReader.openStream(entry.dataPath);
-    if (!content) throw new Error(`Attachment content stream is missing: ${entry.info.name}`);
+    if (!content) throw new InvalidCfbfError(`Attachment content stream is missing: ${entry.info.name}`);
     return { ...entry.info, kind: 'file', content };
   }
 

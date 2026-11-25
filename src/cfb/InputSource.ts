@@ -2,6 +2,7 @@ import type * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
+import { MsgError } from '../errors/errors';
 
 export type InputSource = string | Buffer | Readable;
 
@@ -66,7 +67,12 @@ class FileSource implements RandomAccessSource {
         validateRange(offset, length);
         if (this.closed) throw new Error('Cannot read from a closed MSG input');
         if (!this.sizeChecked && this.maxInputBytes !== undefined) {
-            const size = (await this.fsModule.promises.stat(this.path)).size;
+            let size: number;
+            try {
+                size = (await this.fsModule.promises.stat(this.path)).size;
+            } catch (error) {
+                throw wrapFsError('Unable to inspect MSG input', error);
+            }
             if (size > this.maxInputBytes) {
                 throw new RangeError(`File MSG input exceeds maxInputBytes (${this.maxInputBytes})`);
             }
@@ -79,10 +85,14 @@ class FileSource implements RandomAccessSource {
         const result = Buffer.alloc(length);
         let bytesRead = 0;
 
-        while (bytesRead < length) {
-            const read = await handle.read(result, bytesRead, length - bytesRead, offset + bytesRead);
-            if (read.bytesRead === 0) break;
-            bytesRead += read.bytesRead;
+        try {
+            while (bytesRead < length) {
+                const read = await handle.read(result, bytesRead, length - bytesRead, offset + bytesRead);
+                if (read.bytesRead === 0) break;
+                bytesRead += read.bytesRead;
+            }
+        } catch (error) {
+            throw wrapFsError('Unable to read MSG input', error);
         }
 
         return result.subarray(0, bytesRead);
@@ -91,11 +101,18 @@ class FileSource implements RandomAccessSource {
     async close(): Promise<void> {
         if (this.closed) return;
         this.closed = true;
-        if (this.handle) await (await this.handle).close();
+        if (!this.handle) return;
+        try {
+            await (await this.handle).close();
+        } catch {
+            // Opening the file failed, so there is no handle to close.
+        }
     }
 
     private getHandle(): Promise<fs.promises.FileHandle> {
-        return this.handle ??= this.fsModule.promises.open(this.path, 'r');
+        return this.handle ??= this.fsModule.promises.open(this.path, 'r').catch((error: unknown) => {
+            throw wrapFsError('Unable to open MSG input', error);
+        });
     }
 }
 
@@ -187,7 +204,11 @@ class ReadableSource implements RandomAccessSource {
             this.tempHandle = undefined;
         }
         if (this.tempDirectory) {
-            await this.fsModule.promises.rm(this.tempDirectory, { recursive: true, force: true });
+            try {
+                await this.fsModule.promises.rm(this.tempDirectory, { recursive: true, force: true });
+            } catch (error) {
+                throw wrapFsError('Unable to remove temporary MSG storage', error);
+            }
             this.tempDirectory = undefined;
         }
         this.chunks.length = 0;
@@ -247,12 +268,16 @@ class ReadableSource implements RandomAccessSource {
     }
 
     private async spillToDisk(): Promise<void> {
-        this.tempDirectory = await this.fsModule.promises.mkdtemp(join(tmpdir(), 'msg-js-'));
-        this.tempHandle = await this.fsModule.promises.open(join(this.tempDirectory, 'input.msg'), 'w+');
-        for (let index = 0; index < this.chunks.length; index++) {
-            const offset = index * ReadableSource.BLOCK_SIZE;
-            const length = Math.min(this.chunks[index].length, this.bufferedLength - offset);
-            await writeAll(this.tempHandle, this.chunks[index].subarray(0, length), offset);
+        try {
+            this.tempDirectory = await this.fsModule.promises.mkdtemp(join(tmpdir(), 'msg-js-'));
+            this.tempHandle = await this.fsModule.promises.open(join(this.tempDirectory, 'input.msg'), 'w+');
+            for (let index = 0; index < this.chunks.length; index++) {
+                const offset = index * ReadableSource.BLOCK_SIZE;
+                const length = Math.min(this.chunks[index].length, this.bufferedLength - offset);
+                await writeAll(this.tempHandle, this.chunks[index].subarray(0, length), offset);
+            }
+        } catch (error) {
+            throw wrapFsError('Unable to create temporary MSG storage', error);
         }
         this.chunks.length = 0;
     }
@@ -338,6 +363,15 @@ function validateRange(offset: number, length: number): void {
     if (!Number.isSafeInteger(length) || length < 0) {
         throw new RangeError(`Invalid read length: ${length}`);
     }
+}
+
+/** Keeps filesystem paths out of the message while preserving the original error as `cause`. */
+function wrapFsError(context: string, error: unknown): MsgError {
+    if (error instanceof MsgError) return error;
+    const code = typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string'
+        ? (error as { code: string }).code
+        : undefined;
+    return new MsgError(code === undefined ? context : `${context} (${code})`, error);
 }
 
 function toBuffer(value: unknown): Buffer {
