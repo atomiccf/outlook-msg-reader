@@ -6,6 +6,7 @@ export interface MsgAttachmentInfo {
     mime: string;
     size: number;
     kind: 'file' | 'embedded-message';
+    contentId?: string;
 }
 
 export interface MsgFileAttachment extends MsgAttachmentInfo {
@@ -35,7 +36,7 @@ export interface MsgBody {
 
 /** A recoverable decoding failure that left part of the message unavailable. */
 export interface MsgDiagnostic {
-    code: 'HTML_DECODE_FAILED' | 'RTF_DECODE_FAILED' | 'RTF_CONVERSION_FAILED';
+    code: 'HTML_DECODE_FAILED' | 'RTF_DECODE_FAILED' | 'RTF_CONVERSION_FAILED' | 'CALENDAR_DECODE_FAILED';
     message: string;
 }
 
@@ -58,6 +59,15 @@ export interface MsgMetadata {
     importance?: MsgImportance;
 }
 
+export interface MsgCalendar {
+    messageClass: string;
+    startAt?: Date;
+    endAt?: Date;
+    location?: string;
+    allDay?: boolean;
+    isRecurringSeries?: boolean;
+}
+
 export interface Msg {
     subject: string;
     from: MsgRecipient;
@@ -67,7 +77,8 @@ export interface Msg {
     body: MsgBody;
     attachments: MsgAttachment[];
     metadata?: MsgMetadata;
-    /** Recoverable body decoding failures. Omitted when none were encountered. */
+    calendar?: MsgCalendar;
+    /** Recoverable decoding failures. Omitted when none were encountered. */
     diagnostics?: MsgDiagnostic[];
 }
 

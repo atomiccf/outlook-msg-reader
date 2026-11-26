@@ -51,7 +51,7 @@ describe('AttachmentReader streaming', () => {
     await expect(reader.readAttachmentInfos(1)).rejects.toThrow('MSG has more than maxAttachments (1)');
     expect(findStorages).toHaveBeenCalledTimes(1);
     expect(readNumber).toHaveBeenCalledTimes(storages.length);
-    expect(readStringAt).toHaveBeenCalledTimes(storages.length * 2);
+    expect(readStringAt).toHaveBeenCalledTimes(storages.length * 3);
     expect(openStream).toHaveBeenCalledTimes(storages.length);
   });
 
@@ -172,7 +172,7 @@ describe('AttachmentReader streaming', () => {
       {
         findStorages: () => [['Root Entry', '__attach_version1.0_#00000000']],
         readStringAt: vi.fn(async (_path: string[], ids: string[]) =>
-          ids[0] === '3707' ? 'large.bin' : 'application/octet-stream'),
+          ({ '3707': 'large.bin', '370E': 'application/octet-stream', '3712': '  <image@Example>  ' } as Record<string, string>)[ids[0]]),
       } as unknown as PropertyStore,
       { readNumber: vi.fn(async () => 1) } as unknown as PropertyStreamReader,
     );
@@ -183,15 +183,68 @@ describe('AttachmentReader streaming', () => {
       mime: 'application/octet-stream',
       size: 7,
       kind: 'file',
+      contentId: 'image@Example',
     }]);
     expect(readStream).not.toHaveBeenCalledWith(contentPath);
     expect(openStream).not.toHaveBeenCalled();
 
     const attachment = await reader.openAttachment(0);
+    expect(attachment.contentId).toBe('image@Example');
     const chunks: Buffer[] = [];
     for await (const chunk of attachment.content) chunks.push(chunk as Buffer);
     expect(Buffer.concat(chunks).toString()).toBe('content');
     expect(openStream).toHaveBeenCalledWith(contentPath);
+  });
+
+  it('charges UTF-8 content IDs before reading attachment content', async () => {
+    const bytes = Buffer.from('data');
+    const readStream = vi.fn(async () => bytes);
+    const reader = new AttachmentReader(
+      { readStream, getStreamSize: () => bytes.length } as unknown as CFBFReader,
+      {
+        findStorages: () => [['Root Entry', '__attach_version1.0_#00000000']],
+        readStringAt: vi.fn(async (_path: string[], [id]: string[]) =>
+          ({ '3707': 'photo.png', '370E': 'image/png', '3712': ' <Étage@Example> ' } as Record<string, string>)[id]),
+      } as unknown as PropertyStore,
+      { readNumber: vi.fn(async () => 1) } as unknown as PropertyStreamReader,
+    );
+    const limit = Buffer.byteLength('photo.pngimage/pngfileÉtage@Example') + bytes.length;
+
+    await expect(reader.readAttachments(undefined, limit - 1)).rejects.toThrow('maxResultBytes');
+    expect(readStream).not.toHaveBeenCalled();
+    await expect(reader.readAttachments(undefined, limit)).resolves.toMatchObject([
+      { contentId: 'Étage@Example', content: bytes },
+    ]);
+  });
+
+  it.each([
+    [' <Unicode@Example> ', 'Ansi@Example', 'Unicode@Example'],
+    ['   ', ' <Ansi@Example> ', 'Ansi@Example'],
+    [' < > ', undefined, undefined],
+  ])('reads content ID %j with ANSI fallback %j', async (unicode, ansi, contentId) => {
+    const streams = new Map<string, Buffer>();
+    if (unicode !== undefined) streams.set('__substg1.0_3712001F', Buffer.from(`${unicode}\0`, 'utf16le'));
+    if (ansi !== undefined) streams.set('__substg1.0_3712001E', Buffer.from(`${ansi}\0`));
+    const tree = node('Root Entry', DirectoryEntryType.Root, [
+      node('__attach_version1.0_#00000000', DirectoryEntryType.Storage,
+        [...streams.keys()].map(name => node(name, DirectoryEntryType.Stream))),
+    ]);
+    const cfbReader = {
+      getTree: () => tree,
+      getStreamSize: () => 0,
+      readStream: async (path: string[]) => streams.get(path[path.length - 1]) ?? null,
+    } as unknown as CFBFReader;
+    const propertyReader = new PropertyReader(cfbReader, new Decoder(), {
+      getCodepage: async () => 1252 as const,
+    } as CodePageReader);
+    const reader = new AttachmentReader(
+      cfbReader, new PropertyStore(cfbReader, propertyReader, {} as NamedPropertyReader),
+      { readNumber: async () => 1 } as unknown as PropertyStreamReader,
+    );
+
+    const [info] = await reader.readAttachmentInfos();
+    expect(info.contentId).toBe(contentId);
+    expect('contentId' in info).toBe(contentId !== undefined);
   });
 
   it('rejects oversized attachments before reading their content into a Buffer', async () => {

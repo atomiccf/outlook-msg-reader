@@ -36,7 +36,7 @@ export class AttachmentReader {
     let resultBytes = existingResultBytes;
     for (const { info } of entries) {
       const entryBytes = Buffer.byteLength(info.name) + Buffer.byteLength(info.mime)
-        + Buffer.byteLength(info.kind)
+        + Buffer.byteLength(info.kind) + Buffer.byteLength(info.contentId ?? '')
         + (info.kind === 'file' ? info.size : 0);
       if (maxResultBytes !== undefined && entryBytes > maxResultBytes - resultBytes) {
         throw new RangeError(`MSG result exceeds maxResultBytes (${maxResultBytes})`);
@@ -148,6 +148,10 @@ export class AttachmentReader {
       const dataPath = [...storagePath, '__substg1.0_37010102'];
       const name = await this.properties.readStringAt(storagePath, ['3707', '3704']);
       const mime = await this.properties.readStringAt(storagePath, ['370E']);
+      const contentId = kind === 'file'
+        ? (await this.properties.readStringAt(storagePath, ['3712'], ['001F', '001E']))
+          ?.trim().replace(/^<(.*)>$/s, '$1').trim()
+        : undefined;
       result.push({
         storagePath,
         dataPath,
@@ -157,6 +161,7 @@ export class AttachmentReader {
           mime: mime ?? 'application/octet-stream',
           size: kind === 'file' ? this.cfbReader.getStreamSize(dataPath) ?? 0 : 0,
           kind,
+          ...(contentId ? { contentId } : {}),
         },
       });
     }

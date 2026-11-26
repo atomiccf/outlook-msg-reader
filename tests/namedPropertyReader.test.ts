@@ -20,9 +20,10 @@ function createMappingStreams(): Map<string, Buffer> {
 
   const entryStream = Buffer.alloc(16);
   entryStream.writeUInt32LE(0x1234, 0);
-  entryStream.writeUInt32LE(3 << 16, 4);
+  entryStream.writeUInt16LE(3 << 1, 4);
   entryStream.writeUInt32LE(8, 8);
-  entryStream.writeUInt32LE(0x80000000 + (2 << 16) + 1, 12);
+  entryStream.writeUInt16LE((2 << 1) | 1, 12);
+  entryStream.writeUInt16LE(1, 14);
 
   return new Map([
     ['__substg1.0_00020102', guidStream],
@@ -44,6 +45,25 @@ function node(name: string, type: DirectoryEntryType, children: DirectoryNode[] 
 }
 
 describe('NamedPropertyReader', () => {
+  it.each([
+    ['1c81000008000500', 0x811c],
+    ['1000000007000500', 'CustomName'],
+  ])('resolves the index in MS-OXMSG example %s', async (entry, name) => {
+    const guid = Buffer.from('0220060000000000c000000000000046', 'hex');
+    const stringStream = Buffer.concat([Buffer.alloc(16), createMappingStreams().get('__substg1.0_00040102')!.subarray(8)]);
+    const streams = new Map([
+      ['__substg1.0_00020102', typeof name === 'number' ? Buffer.concat([Buffer.alloc(16), guid]) : guid],
+      ['__substg1.0_00030102', Buffer.from(entry, 'hex')],
+      ['__substg1.0_00040102', stringStream],
+    ]);
+    const cfbReader = {
+      readStream: async (path: string[]) => streams.get(path[path.length - 1]) ?? null,
+    } as unknown as CFBFReader;
+    const reader = new NamedPropertyReader(cfbReader, new NoopLogger());
+    await reader.initialize();
+    expect(reader.getPropertyId(CUSTOM_GUID, name)).toBe(0x8005);
+  });
+
   it('reads GUID, entry, and string streams according to MS-OXMSG', async () => {
     const streams = createMappingStreams();
     const readStream = vi.fn(async (path: string[]) => streams.get(path[path.length - 1]) ?? null);

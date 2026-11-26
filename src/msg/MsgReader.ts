@@ -1,7 +1,8 @@
 import type { CFBFReader } from '../cfb/CFBReader';
-import type { Msg, MsgBody, MsgDiagnostic, MsgMetadata, MsgRecipient } from '../types';
+import type { Msg, MsgBody, MsgCalendar, MsgDiagnostic, MsgMetadata, MsgRecipient } from '../types';
 import type { AttachmentReader } from './AttachmentReader';
 import type { BodyReader } from './BodyReader';
+import type { CalendarReader } from './CalendarReader';
 import type { RecipientReader, Recipients } from './RecipientReader';
 import type { SenderReader } from './SenderReader';
 import type { SubjectReader } from './SubjectReader';
@@ -37,6 +38,7 @@ export class MsgReader {
     private readonly recipientReader: RecipientReader,
     private readonly attachmentReader: AttachmentReader,
     private readonly metadataReader?: MetadataReader,
+    private readonly calendarReader?: CalendarReader,
   ) {}
 
   configure(options: MsgReaderOptions): void {
@@ -125,6 +127,8 @@ export class MsgReader {
       this.maxRecipients, this.maxResultBytes, this.maxResultBytes - remaining,
     );
     charge(recipients);
+    const calendar = await this.getCalendar();
+    charge(calendar);
     const usedResultBytes = this.maxResultBytes !== undefined && remaining !== undefined
       ? this.maxResultBytes - remaining
       : 0;
@@ -148,6 +152,7 @@ export class MsgReader {
       bcc: recipients.bcc,
       attachments,
       metadata,
+      ...(calendar ? { calendar } : {}),
       ...(diagnostics.length ? { diagnostics } : {}),
     };
   }
@@ -188,6 +193,13 @@ export class MsgReader {
     );
   }
   getMetadata(): Promise<MsgMetadata> { return this.metadataReader?.read() ?? Promise.resolve({}); }
+
+  async getCalendar(): Promise<MsgCalendar | undefined> {
+    this.signal?.throwIfAborted();
+    const calendar = await this.calendarReader?.read(this.reportDiagnostic);
+    this.signal?.throwIfAborted();
+    return calendar;
+  }
 
   /** Releases resources retained by stream-backed input. */
   close(): Promise<void> { return this.cfbReader.close(); }

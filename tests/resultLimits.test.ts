@@ -12,10 +12,12 @@ function resultBytes(message: Msg): number {
     ...Object.values(message.body),
     ...[message.from, ...message.to, ...(message.cc ?? []), ...(message.bcc ?? [])]
       .flatMap(recipient => [recipient.name, recipient.email]),
-    ...message.attachments.flatMap(attachment => [attachment.name, attachment.mime, attachment.kind]),
+    ...message.attachments.flatMap(attachment => [attachment.name, attachment.mime, attachment.kind, attachment.contentId]),
     message.metadata?.messageId,
     message.metadata?.transportHeaders,
     message.metadata?.importance,
+    message.calendar?.messageClass,
+    message.calendar?.location,
   ];
   return strings.reduce((total, value) => total + Buffer.byteLength(value ?? '', 'utf8'), 0)
     + message.attachments.reduce((total, attachment) =>
@@ -32,6 +34,8 @@ describe('public parsed result budget', () => {
     'rtf-unicode',
     'small-attachment',
     'embedded-message',
+    'inline-images',
+    'local-recurring-invitation',
   ])('counts returned payload rather than source streams for %s', async (fixture) => {
     const input = readFileSync(resolve(fixtureRoot, `${fixture}.msg`));
     const expected = await parseMsg(input);

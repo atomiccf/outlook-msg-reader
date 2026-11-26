@@ -8,6 +8,7 @@ import { PropertyStore } from '../mapi/PropertyStore';
 import { PropertyStreamReader } from '../mapi/PropertyStreamReader';
 import { AttachmentReader } from './AttachmentReader';
 import { BodyReader } from './BodyReader';
+import { CalendarReader } from './CalendarReader';
 import { MetadataReader } from './MetadataReader';
 import { MsgReader } from './MsgReader';
 import { RecipientReader } from './RecipientReader';
@@ -50,5 +51,6 @@ export function createMessageReader(
     new RecipientReader(properties, propertyStream, logger),
     attachmentReader,
     new MetadataReader(properties, propertyStream),
+    new CalendarReader(properties, propertyStream),
   );
 }

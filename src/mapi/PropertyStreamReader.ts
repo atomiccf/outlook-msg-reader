@@ -34,6 +34,17 @@ export class PropertyStreamReader {
     return typeof propertyValue === 'boolean' ? propertyValue : undefined;
   }
 
+  async readTime(storagePath: string[], ids: string[]): Promise<Date | undefined> {
+    const entries = await this.getEntries(storagePath);
+    for (const id of ids) {
+      const entry = entries.get(id.toUpperCase().padStart(4, '0'));
+      if (entry?.type === 0x0040 && entry.value instanceof Date && Number.isFinite(entry.value.getTime())) {
+        return new Date(entry.value);
+      }
+    }
+    return undefined;
+  }
+
   private async readEntry(storagePath: string[], ids: string[]): Promise<FixedPropertyEntry | undefined> {
     const entries = await this.getEntries(storagePath);
     for (const id of ids) {
@@ -98,8 +109,9 @@ export class PropertyStreamReader {
       case 0x000b: return buffer.readUInt16LE(offset) !== 0;
       case 0x0014: return buffer.readBigInt64LE(offset);
       case 0x0040: {
-        const fileTime = buffer.readBigUInt64LE(offset);
-        if (fileTime === 0n) return undefined;
+        // FILETIME values with the high bit set are outside the system time range.
+        const fileTime = buffer.readBigInt64LE(offset);
+        if (fileTime <= 0n) return undefined;
         return new Date(Number(fileTime / 10_000n - 11_644_473_600_000n));
       }
       default: return undefined;

@@ -19,7 +19,6 @@ export interface PropertyReadOptions {
 export class PropertyStore {
   private readonly locations = new Map<string, Map<string, PropertyLocation[]>>();
   private readonly nodesByPath = new Map<string, DirectoryNode>();
-  private namedPropertiesInitialization?: Promise<void>;
 
   constructor(
     private readonly cfbReader: CFBFReader,
@@ -66,15 +65,19 @@ export class PropertyStore {
     return undefined;
   }
 
-  async readString(ids: string[]): Promise<string | undefined> {
-    return this.readStringAt(this.rootStorage, ids);
+  async readString(ids: string[], types?: PropertyType[]): Promise<string | undefined> {
+    return this.readStringAt(this.rootStorage, ids, types);
   }
 
-  async readStringAt(storagePath: string[], ids: string[]): Promise<string | undefined> {
+  async readStringAt(
+    storagePath: string[],
+    ids: string[],
+    types: PropertyType[] = ['001F', '001E', '0102'],
+  ): Promise<string | undefined> {
     const value = await this.readAtWithMode(
       storagePath,
       ids,
-      { types: ['001F', '001E', '0102'] },
+      { types },
       true,
     );
     return typeof value === 'string' ? value : undefined;
@@ -85,11 +88,15 @@ export class PropertyStore {
     name: string | number,
     options: PropertyReadOptions = {},
   ): Promise<string | Buffer | undefined> {
-    this.namedPropertiesInitialization ??= this.namedProperties.initialize();
-    await this.namedPropertiesInitialization;
+    const propertyId = await this.resolveNamedPropertyId(guid, name);
+    return propertyId === undefined ? undefined : this.read([propertyId], options);
+  }
+
+  async resolveNamedPropertyId(guid: string, name: string | number): Promise<string | undefined> {
+    await this.namedProperties.initialize();
     const propertyId = this.namedProperties.getPropertyId(guid, name);
     if (propertyId === undefined) return undefined;
-    return this.readAt(this.rootStorage, [propertyId.toString(16).padStart(4, '0')], options);
+    return propertyId.toString(16).padStart(4, '0');
   }
 
   getRootStorage(): string[] { return [...this.rootStorage]; }

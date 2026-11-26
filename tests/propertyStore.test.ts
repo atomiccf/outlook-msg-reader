@@ -77,10 +77,9 @@ describe('PropertyStore storage scoping', () => {
     expect(initialize).not.toHaveBeenCalled();
 
     await store.readNamed('{guid}', 'property');
-    await store.readNamed('{guid}', 'property');
 
     expect(initialize).toHaveBeenCalledTimes(1);
-    expect(getPropertyId).toHaveBeenCalledTimes(2);
+    expect(getPropertyId).toHaveBeenCalledWith('{guid}', 'property');
   });
 
   it('decodes ANSI properties with the message code page', async () => {

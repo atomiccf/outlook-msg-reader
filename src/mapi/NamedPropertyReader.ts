@@ -10,10 +10,11 @@ const STRING_STREAM = '__substg1.0_00040102';
 const PS_MAPI = '{00020328-0000-0000-C000-000000000046}';
 const PS_PUBLIC_STRINGS = '{00020329-0000-0000-C000-000000000046}';
 
+export class NamedPropertyDecodeError extends PropertyDecodeError {}
+
 /** Maps MSG named property GUID/name pairs to their assigned property IDs. */
 export class NamedPropertyReader {
   private readonly mappingCache = new Map<string, NamedPropertyMapping>();
-  private initialized = false;
   private initialization?: Promise<void>;
 
   constructor(
@@ -26,29 +27,27 @@ export class NamedPropertyReader {
   }
 
   private async initializeOnce(): Promise<void> {
-    if (this.initialized) return;
-
-    try {
-      const entryStream = await this.cfbReader.readStream([...NAMEID_STORAGE, ENTRY_STREAM]);
-      if (!entryStream?.length) {
-        this.logger.debug('[NamedPropertyReader] no named properties found');
-        this.initialized = true;
-        return;
-      }
-
-      const [guidStream, stringStream] = await Promise.all([
-        this.cfbReader.readStream([...NAMEID_STORAGE, GUID_STREAM]),
-        this.cfbReader.readStream([...NAMEID_STORAGE, STRING_STREAM]),
-      ]);
-      this.parseStreams(guidStream ?? Buffer.alloc(0), entryStream, stringStream ?? Buffer.alloc(0));
-      this.logger.debug('[NamedPropertyReader] parsed named properties', {
-        mappings: this.mappingCache.size,
-      });
-      this.initialized = true;
-    } catch (error) {
-      this.logger.warn('[NamedPropertyReader] initialization failed', error);
-      throw new PropertyDecodeError('Unable to initialize named properties', error);
+    const entryStream = await this.cfbReader.readStream([...NAMEID_STORAGE, ENTRY_STREAM]);
+    if (!entryStream?.length) {
+      this.logger.debug('[NamedPropertyReader] no named properties found');
+      return;
     }
+
+    const [guidStream, stringStream] = await Promise.all([
+      this.cfbReader.readStream([...NAMEID_STORAGE, GUID_STREAM]),
+      this.cfbReader.readStream([...NAMEID_STORAGE, STRING_STREAM]),
+    ]);
+    try {
+      this.parseStreams(guidStream ?? Buffer.alloc(0), entryStream, stringStream ?? Buffer.alloc(0));
+    } catch (error) {
+      this.mappingCache.clear();
+      this.logger.warn('[NamedPropertyReader] initialization failed', error);
+      if (error instanceof PropertyDecodeError) {
+        throw new NamedPropertyDecodeError('Unable to initialize named properties', error);
+      }
+      throw error;
+    }
+    this.logger.debug('[NamedPropertyReader] parsed named properties', { mappings: this.mappingCache.size });
   }
 
   private parseStreams(guidStream: Buffer, entryStream: Buffer, stringStream: Buffer): void {
@@ -61,12 +60,15 @@ export class NamedPropertyReader {
 
     for (let offset = 0; offset < entryStream.length; offset += 8) {
       const nameIdentifierOrStringOffset = entryStream.readUInt32LE(offset);
-      const indexAndKind = entryStream.readUInt32LE(offset + 4);
-      const propertyIndex = indexAndKind & 0xffff;
-      const guidIndex = (indexAndKind >>> 16) & 0x7fff;
-      const stringKind = (indexAndKind & 0x80000000) !== 0;
+      const guidAndKind = entryStream.readUInt16LE(offset + 4);
+      const propertyIndex = entryStream.readUInt16LE(offset + 6);
+      const guidIndex = guidAndKind >>> 1;
+      const stringKind = (guidAndKind & 1) !== 0;
       const guid = this.readGuid(guidStream, guidIndex);
       const propertyId = 0x8000 + propertyIndex;
+      if (propertyId >= 0xffff) {
+        throw new PropertyDecodeError(`Invalid named property index: ${propertyIndex}`);
+      }
 
       const mapping: NamedPropertyMapping = stringKind
         ? {
@@ -121,7 +123,7 @@ export class NamedPropertyReader {
   }
 
   private mappingKey(guid: string, name: string | number): string {
-    return `${guid.toUpperCase()}:${name}`;
+    return `${guid.toUpperCase()}:${typeof name}:${name}`;
   }
 
   getPropertyId(guid: string, name: string | number): number | undefined {

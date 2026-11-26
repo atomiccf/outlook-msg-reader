@@ -66,6 +66,7 @@ export type {
     MsgAttachmentInfo,
     MsgAttachmentStream,
     MsgMetadata,
+    MsgCalendar,
     MsgImportance,
     MsgRecipient,
     DirectoryNode,

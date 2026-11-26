@@ -53,7 +53,8 @@ describe('prototype pollution', () => {
       const chunk = stringNameStream(names[i]);
       chunks.push(chunk);
       entries.writeUInt32LE(stringOffset, i * 8);
-      entries.writeUInt32LE(0x80000000 + (2 << 16) + i, i * 8 + 4);
+      entries.writeUInt16LE((2 << 1) | 1, i * 8 + 4);
+      entries.writeUInt16LE(i, i * 8 + 6);
       stringOffset += chunk.length;
     }
     const streams = new Map([

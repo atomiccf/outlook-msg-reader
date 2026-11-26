@@ -163,6 +163,73 @@
         "attachmentCount": 1,
         "attachmentKinds": ["embedded-message"]
       }
+    },
+    {
+      "id": "local-appointment",
+      "file": "local-appointment.msg",
+      "producer": "OpenMcdf 3.1.4",
+      "source": "Locally generated MS-OXMSG appointment with named dates only",
+      "msgFormat": "unicode",
+      "sha256": "a83500bb4a43a255d322ff2f35f7648e0b65db0aa147aa461f1fe0f63387c7a5",
+      "expected": {
+        "calendar": {
+          "messageClass": "IPM.Appointment",
+          "startAt": "2017-02-13T15:00:00.000Z",
+          "endAt": "2017-02-13T18:00:00.000Z",
+          "location": "Online",
+          "allDay": false,
+          "isRecurringSeries": false
+        }
+      }
+    },
+    {
+      "id": "local-recurring-invitation",
+      "file": "local-recurring-invitation.msg",
+      "producer": "OpenMcdf 3.1.4",
+      "source": "Locally generated MS-OXMSG meeting request with named dates and a recurring-series flag",
+      "msgFormat": "unicode",
+      "sha256": "f1cd851d9d69bdc651ef1cf06d58f38f7db869733f220e490f281aff4378c3c7",
+      "expected": {
+        "calendar": {
+          "messageClass": "IPM.Schedule.Meeting.Request",
+          "startAt": "2017-01-19T17:30:00.000Z",
+          "endAt": "2017-01-19T18:00:00.000Z",
+          "location": "10 Down Street, NY, USA",
+          "allDay": false,
+          "isRecurringSeries": true
+        }
+      }
+    },
+    {
+      "id": "inline-images",
+      "file": "inline-images.msg",
+      "producer": "MsgKit 3.0.5",
+      "source": "Locally generated email with a 1x1 PNG attachment and a 1x1 GIF linked from the HTML by CID",
+      "msgFormat": "unicode",
+      "bodyFormat": "html",
+      "sha256": "4a140b78805ec105c788462279a9db87d561c442f879dae3414b1b14821175ae",
+      "expected": {
+        "calendar": null,
+        "files": [
+          { "name": "regular.png", "mime": "image/png", "size": 68, "sha256": "5e3d382db4dd83d59aa5742793ad6b7903409e865c83bcbc54835049f043bc15" },
+          { "name": "inline.gif", "mime": "image/gif", "size": 42, "contentId": "Inline@example.test", "sha256": "ef1955ae757c8b966c83248350331bd3a30f658ced11f387f8ebf05ab3368629" }
+        ]
+      }
+    },
+    {
+      "id": "ics-attachment",
+      "file": "ics-attachment.msg",
+      "producer": "MsgKit 3.0.5",
+      "source": "Locally generated ordinary email with a plain ASCII iCalendar attachment",
+      "msgFormat": "unicode",
+      "bodyFormat": "plain",
+      "sha256": "2bb59851f34e4df50cbce93496d43b8d580994f08ef29baf7f09594114eac580",
+      "expected": {
+        "calendar": null,
+        "files": [
+          { "name": "meeting.ics", "mime": "text/calendar", "size": 238, "sha256": "a755dbb469889145bf9b87e16b1e88d5a08fb482f9b5c1a946b49c400f01abbe" }
+        ]
+      }
     }
   ]
 }
