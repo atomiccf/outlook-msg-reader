@@ -46,7 +46,11 @@ export function bundle(entryPoint, options = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const output = new URL('./dist/', import.meta.url);
   await mkdir(output, { recursive: true });
-  await bundle('public/app.js', { outfile: 'dist/app.js', minify: true, legalComments: 'eof' });
+  await bundle('public/app.js', {
+    outfile: 'dist/app.js', minify: true, legalComments: 'eof',
+    banner: { js: '/* Includes ical.js under MPL-2.0. See ical.js-LICENSE and https://github.com/kewisch/ical.js/releases for source. */' },
+  });
+  await copyFile(new URL('./node_modules/ical.js/LICENSE', import.meta.url), new URL('ical.js-LICENSE', output));
   await copyFile(new URL('./public/styles.css', import.meta.url), new URL('styles.css', output));
 
   const index = new URL('./public/index.html', import.meta.url);

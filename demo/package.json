@@ -6,6 +6,7 @@
   },
   "devDependencies": {
     "buffer": "6.0.3",
-    "esbuild": "0.27.0"
+    "esbuild": "0.27.0",
+    "ical.js": "2.2.1"
   }
 }

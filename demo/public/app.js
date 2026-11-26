@@ -1,4 +1,5 @@
 import { parseMessageFile } from '../parse.mjs';
+import { maxCalendarPreviewBytes, readCalendarPreview } from '../calendar-preview.mjs';
 
 const elements = {
   intro: document.querySelector('#intro'),
@@ -96,7 +97,7 @@ function renderMessage(message) {
 
   renderRecipients(message);
   renderAttachments(message.attachments);
-  renderMetadata(message.metadata);
+  renderMetadata(message.metadata, message.calendar);
   renderBodies(message.body);
 
   elements.transportHeaders.textContent = message.metadata.transportHeaders || '';
@@ -132,6 +133,8 @@ function renderAttachments(attachments) {
   }
 
   for (const attachment of attachments) {
+    const item = document.createElement('div');
+    item.className = 'attachment-item';
     const downloadable = attachment.kind === 'file';
     const link = document.createElement(downloadable ? 'a' : 'div');
     link.className = 'attachment';
@@ -150,18 +153,90 @@ function renderAttachments(attachments) {
       ? 'Embedded message'
       : `${attachment.mime} · ${formatBytes(attachment.size)}`;
     copy.append(name, detail);
+    if (attachment.contentId) {
+      const contentId = document.createElement('small');
+      contentId.textContent = `Content-ID: ${attachment.contentId}`;
+      copy.append(contentId);
+    }
 
     const arrow = document.createElement('span');
     arrow.className = 'download-label';
     arrow.textContent = 'Download';
     link.append(copy);
     if (downloadable) link.append(arrow);
-    elements.attachments.append(link);
+    item.append(link);
+    if (downloadable && (/\.ics$/i.test(attachment.name) || /^text\/calendar(?:\s*;|$)/i.test(attachment.mime))) {
+      item.append(createCalendarPreview(attachment.content));
+    }
+    elements.attachments.append(item);
   }
 }
 
-function renderMetadata(metadata) {
+function createCalendarPreview(content) {
+  const details = document.createElement('details');
+  details.className = 'calendar-preview';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Preview calendar';
+  const panel = document.createElement('div');
+  details.append(summary, panel);
+  details.addEventListener('toggle', () => {
+    if (!details.open || panel.hasChildNodes()) return;
+
+    const notice = document.createElement('p');
+    notice.className = 'muted';
+    if (content.byteLength > maxCalendarPreviewBytes) {
+      notice.textContent = 'Preview is available for calendars up to 1 MiB.';
+      panel.append(notice);
+      return;
+    }
+
+    let calendar;
+    try {
+      calendar = readCalendarPreview(content);
+    } catch {
+      notice.textContent = 'Could not read this calendar file.';
+      panel.append(notice);
+      return;
+    }
+
+    for (const event of calendar.events) {
+      const entry = document.createElement('div');
+      entry.className = 'calendar-event';
+      const title = document.createElement('strong');
+      title.textContent = event.title || 'Untitled event';
+      const fields = document.createElement('dl');
+      fields.className = 'metadata';
+      addMetadata('Starts', event.start, fields);
+      addMetadata(event.allDay ? 'Ends before' : 'Ends', event.end, fields);
+      addMetadata('Location', event.location, fields);
+      if (event.recurring) addMetadata('Repeats', 'Yes', fields);
+      if (event.cancelled) addMetadata('Status', 'Cancelled', fields);
+      entry.append(title, fields);
+      if (event.description) {
+        const description = document.createElement('p');
+        description.textContent = event.description;
+        entry.append(description);
+      }
+      panel.append(entry);
+    }
+    if (!calendar.total || calendar.total > calendar.events.length) {
+      notice.textContent = calendar.total ? `Showing ${calendar.events.length} of ${calendar.total} events.` : 'No events in this calendar.';
+      panel.append(notice);
+    }
+  });
+  return details;
+}
+
+function renderMetadata(metadata, calendar) {
   elements.metadata.replaceChildren();
+  if (calendar) {
+    addMetadata('Message class', calendar.messageClass);
+    addMetadata('Starts', calendar.startAt?.toISOString());
+    addMetadata('Ends', calendar.endAt?.toISOString());
+    addMetadata('Location', calendar.location);
+    if (calendar.allDay !== undefined) addMetadata('All day', calendar.allDay ? 'Yes' : 'No');
+    if (calendar.isRecurringSeries !== undefined) addMetadata('Recurring series', calendar.isRecurringSeries ? 'Yes' : 'No');
+  }
   addMetadata('Importance', metadata.importance);
   addMetadata('Sent', formatDate(metadata.sentAt));
   addMetadata('Received', formatDate(metadata.receivedAt));
@@ -176,13 +251,13 @@ function renderMetadata(metadata) {
   }
 }
 
-function addMetadata(label, value) {
+function addMetadata(label, value, list = elements.metadata) {
   if (!value) return;
   const term = document.createElement('dt');
   term.textContent = label;
   const description = document.createElement('dd');
   description.textContent = value;
-  elements.metadata.append(term, description);
+  list.append(term, description);
 }
 
 function renderBodies(body) {
